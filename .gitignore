@@ -1,0 +1,23 @@
+# Generated output and dependencies
+**/target/
+**/node_modules/
+**/.next/
+**/out/
+**/build/
+**/coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.pem
+
+# Logs and editor/OS state
+*.log
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
