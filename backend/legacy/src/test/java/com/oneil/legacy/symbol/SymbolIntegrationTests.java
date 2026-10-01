@@ -141,7 +141,7 @@ class SymbolIntegrationTests extends PostgresTestSupport {
         var failing = new JavaSymbolIndexer() {
             @Override public Index index(Path path, ScanModel.Inventory ignored) { return broken; }
         };
-        var result = new ScanService(scanStore, new RepositoryInventory(), properties, failing, new FrameworkIndexer(), new com.oneil.legacy.database.DatabaseIndexer()).scan();
+        var result = new ScanService(scanStore, new RepositoryInventory(), properties, failing, new com.oneil.legacy.grails.GrailsIndexer(), new FrameworkIndexer(), new com.oneil.legacy.database.DatabaseIndexer()).scan();
         assertThat(result.scan().status()).isEqualTo(ScanModel.Status.FAILED);
         assertThat(symbols.search("", 100, 0).freshness().scanId()).isEqualTo(first.scan().id());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM java_symbol WHERE scan_id=?", Integer.class, result.scan().id())).isZero();

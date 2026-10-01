@@ -30,7 +30,7 @@ export SPRING_DATASOURCE_URL="jdbc:postgresql://127.0.0.1:${POSTGRES_PORT}/legac
 export SPRING_DATASOURCE_USERNAME=legacy
 export SPRING_DATASOURCE_PASSWORD="$POSTGRES_PASSWORD"
 export LEGACY_REPOSITORY_ROOT=/absolute/path/to/legacy/source
-export ANALYZER_VERSION=database-usage-index-4
+export ANALYZER_VERSION=grails-index-5
 
 docker compose up -d --wait postgres
 cd backend/legacy
@@ -57,7 +57,7 @@ volume unless you intend to delete its scan history.
 
 `POST /api/scans` synchronously inventories the configured root. No target path
 is accepted from the request. An unset root returns 503 without creating a
-scan. `ANALYZER_VERSION` defaults to `database-usage-index-4` and can be overridden.
+scan. `ANALYZER_VERSION` defaults to `grails-index-5` and can be overridden.
 
 ```bash
 curl -i -X POST http://127.0.0.1:8080/api/scans
@@ -494,9 +494,75 @@ Google font loading needs network access during a fresh build. Routes:
 Pages render on demand (`force-dynamic`, uncached `fetch`), so a build does not need a
 running backend. `npm run lint` is also available.
 
+## Grails mapping (Slice 8)
+
+Groovy sources are parsed statically with the official Groovy AST
+(`org.apache.groovy:groovy`, version managed by Spring Boot 4.1.1) up to the
+**conversion phase only**: target code is never compiled, loaded or executed. The
+supported baseline is the **Grails 3.x–6.x** layout
+(`grails-app/{controllers,services,domain,conf/spring}`); the Grails 2.x
+`UrlMappings.groovy` location is also recognized. This is not generic Grails support.
+
+Indexed constructs, all into the existing normalized model (no new symbol kinds,
+relationship types or schema changes):
+
+| Construct | Evidence |
+| --- | --- |
+| `UrlMappings.groovy` | `ROUTE` symbol `grails:route:<path>#<uri>`; `ROUTES_TO` to the controller action method |
+| Controller, action, service | `CLASS`/`METHOD` symbols `groovy:type:` / `groovy:method:` |
+| Service/property injection | `INJECTS` from the owning class to the service class (or candidates when ambiguous) |
+| Service usage | `CALLS` to the resolved service method |
+| Domain class | `CLASS` symbol plus `MAPS_TO_TABLE` to `db:table:<name>` |
+| `resources.groovy` | `CONTEXT` + `BEAN` symbols with `WIRES_TO` and `INJECTS` |
+| GORM dynamic finders | `READS_TABLE` (and `CALLS` to the domain) only when the domain is statically determined |
+
+Resolution rules:
+
+- `RESOLVED` — explicit evidence: `controller:`/`action:` in a mapping, a declared
+  property type, `static mapping = { table 'X' }`, an explicit bean class in `resources.groovy`.
+- `INFERRED` — documented Grails/GORM convention: the default `index` action,
+  `resources:` REST mappings, `def customerService` resolving to `CustomerService`,
+  the conventional snake_case table name, and GORM dynamic-finder reads.
+- `UNRESOLVED` — dynamic or metaprogrammed behavior: `controller: "$controller"`
+  expressions, unknown or ambiguous controllers/services/actions, missing
+  dependencies, unresolved bean `ref`s, `metaClass`/`methodMissing` usage.
+
+Dynamic finders such as `Customer.findByLastName(...)` produce an inferred
+`READS_TABLE` only when the receiver resolves to an indexed domain class; arbitrary
+method names never invent targets. Ambiguous references keep their candidate list.
+Conventional table names follow the Grails/Hibernate physical naming rule
+(`CustomerOrder` → `customer_order`). Malformed Groovy records a localized
+`GROOVY`/`GROOVY_PARSE` analysis error and does not fail the scan.
+
+Example flow, reproducible from the fixture repository:
+
+```text
+/customer/$id
+  -> ROUTES_TO · RESOLVED   groovy:method:demo.CustomerController#show(Long)
+  -> CALLS · RESOLVED       groovy:method:demo.CustomerService#findByLastName(String)
+  -> READS_TABLE · INFERRED db:table:CUSTOMER
+```
+
+Query it through the framework-neutral relationship endpoints, which traverse the
+same normalized index as the Struts/Java evidence:
+
+```bash
+curl --get 'http://127.0.0.1:8080/api/relationships/trace' \
+  --data-urlencode 'component=/customer/$id'
+curl --get 'http://127.0.0.1:8080/api/relationships/database-tables' \
+  --data-urlencode 'component=/customer/$id'
+curl --get 'http://127.0.0.1:8080/api/entry-points' \
+  --data-urlencode 'path=/customer/$id'
+```
+
+The entry-point trace endpoint keeps its Struts/Spring bean-bridge semantics; for a
+Grails route it stops at the controller action, and the deeper service/domain/table
+chain is returned by `/api/relationships/trace`.
+
 ## Validation and version control
 
-See [Slice 7 validation](docs/validation/SLICE_07_VALIDATION.md),
+See [Slice 8 validation](docs/validation/SLICE_08_VALIDATION.md),
+[Slice 7 validation](docs/validation/SLICE_07_VALIDATION.md),
 [Slice 6 validation](docs/validation/SLICE_06_VALIDATION.md),
 [Slice 5 validation](docs/validation/SLICE_05_VALIDATION.md),
 [Slice 4 validation](docs/validation/SLICE_04_VALIDATION.md),
@@ -504,5 +570,5 @@ See [Slice 7 validation](docs/validation/SLICE_07_VALIDATION.md),
 [Slice 2 validation](docs/validation/SLICE_02_VALIDATION.md),
 [Slice 1 validation](docs/validation/SLICE_01_VALIDATION.md), and the earlier
 [Slice 0 record](docs/validation/SLICE_00_VALIDATION.md).
-Validation records identify the commit under test when available. Slice 3–7 changes
+Validation records identify the commit under test when available. Slice 3–8 changes
 are uncommitted. Root ignore rules exclude generated output and local credentials.

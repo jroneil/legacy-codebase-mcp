@@ -137,7 +137,7 @@ class ScanIntegrationTests extends PostgresTestSupport {
         var brokenInventory = new RepositoryInventory() {
             @Override public Inventory collect(Path path) { return new Inventory(List.of(file, file), List.of(), null); }
         };
-        var failure = new ScanService(store, brokenInventory, properties, new com.oneil.legacy.symbol.JavaSymbolIndexer(), new FrameworkIndexer(), new com.oneil.legacy.database.DatabaseIndexer()).scan();
+        var failure = new ScanService(store, brokenInventory, properties, new com.oneil.legacy.symbol.JavaSymbolIndexer(), new com.oneil.legacy.grails.GrailsIndexer(), new FrameworkIndexer(), new com.oneil.legacy.database.DatabaseIndexer()).scan();
         assertThat(failure.scan().status()).isEqualTo(Status.FAILED);
         assertThat(failure.files().items()).isEmpty();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM source_file WHERE scan_id=?", Integer.class, failure.scan().id())).isZero();

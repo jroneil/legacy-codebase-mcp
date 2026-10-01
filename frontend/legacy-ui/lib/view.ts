@@ -41,7 +41,9 @@ export function traceSteps(chain: Chain): TraceStep[] {
   return steps;
 }
 
-const ID_PREFIXES = ["java:type:", "java:method:", "java:field:", "java:package:", "java:annotation:"];
+const ID_PREFIXES = ["java:type:", "java:method:", "java:field:", "java:package:", "java:annotation:",
+  "groovy:type:", "groovy:method:", "groovy:field:", "groovy:package:", "groovy:context:"];
+const CONFIG_PREFIXES = ["spring:bean:", "grails:route:"];
 
 /** Compact display label for a stable ID; the full ID is always shown separately. */
 export function nodeLabel(stableId: string): string {
@@ -52,9 +54,12 @@ export function nodeLabel(stableId: string): string {
       break;
     }
   }
-  if (label.startsWith("spring:bean:")) {
-    const bean = label.slice("spring:bean:".length);
-    label = bean.includes("#") ? bean.slice(bean.lastIndexOf("#") + 1) : bean;
+  for (const prefix of CONFIG_PREFIXES) {
+    if (label.startsWith(prefix)) {
+      const rest = label.slice(prefix.length);
+      label = rest.includes("#") ? rest.slice(rest.lastIndexOf("#") + 1) : rest;
+      break;
+    }
   }
   if (label.startsWith("db:table:")) label = label.slice("db:table:".length);
   return label;

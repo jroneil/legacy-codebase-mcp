@@ -48,6 +48,10 @@ describe("labels and formatting", () => {
     expect(nodeLabel("spring:bean:web/WEB-INF/applicationContext.xml#customerService")).toBe("customerService");
     expect(nodeLabel("db:table:CUSTOMER")).toBe("CUSTOMER");
     expect(nodeLabel("/customer/search")).toBe("/customer/search");
+    // Grails/Groovy identities added in Slice 8 keep the same presentation rules.
+    expect(nodeLabel("groovy:type:demo.CustomerController")).toBe("demo.CustomerController");
+    expect(nodeLabel("groovy:method:demo.CustomerController#show(Long)")).toBe("demo.CustomerController#show(Long)");
+    expect(nodeLabel("grails:route:grails-app/controllers/demo/UrlMappings.groovy#/customer/$id")).toBe("/customer/$id");
   });
 
   it("renders evidence file, line and column as provided", () => {

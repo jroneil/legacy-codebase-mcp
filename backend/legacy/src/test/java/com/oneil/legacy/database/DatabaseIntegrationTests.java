@@ -101,7 +101,7 @@ class DatabaseIntegrationTests extends PostgresTestSupport {
                 return new Index(good.symbols(), invalid, good.errors());
             }
         };
-        var failure = new ScanService(scanStore, new RepositoryInventory(), properties, new JavaSymbolIndexer(), new FrameworkIndexer(), failing).scan();
+        var failure = new ScanService(scanStore, new RepositoryInventory(), properties, new JavaSymbolIndexer(), new com.oneil.legacy.grails.GrailsIndexer(), new FrameworkIndexer(), failing).scan();
         assertThat(failure.scan().status()).isEqualTo(ScanModel.Status.FAILED);
         assertThat(symbols.search("CUSTOMER", 100, 0).freshness().scanId()).isEqualTo(first.scan().id());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM java_symbol WHERE scan_id=?", Integer.class, failure.scan().id())).isZero();
