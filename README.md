@@ -464,27 +464,45 @@ Any Streamable HTTP MCP client can use the same URL. The endpoint exposes
 source-derived code intelligence to the connected agent; keep it on loopback
 and treat that boundary as documented in `AGENTS.md`.
 
-## Frontend
+## Frontend (Slice 7)
+
+The Next.js App Router UI is a read-only inspection interface over the REST API. It
+contains no analysis logic: every relationship, resolution state, access kind,
+directness and truncation flag is displayed exactly as the backend returns it.
 
 ```bash
 cd frontend/legacy-ui
 npm ci
+npm test          # vitest, server-rendered component/page tests
 npm run build
-npm run start -- --hostname 127.0.0.1
+LEGACY_API_BASE_URL=http://127.0.0.1:8080 npm run start -- --hostname 127.0.0.1
 ```
 
-Open `http://127.0.0.1:3000` to see the generated page. Google font loading needs
-network access during a fresh build. `npm run lint` is available; no frontend
-features or frontend test suite have been added.
+`LEGACY_API_BASE_URL` is server-side only and defaults to `http://127.0.0.1:8080`.
+Google font loading needs network access during a fresh build. Routes:
+
+| Route | Purpose |
+| --- | --- |
+| `/` | symbol search with candidate selection for ambiguous names |
+| `/symbols/[id]` | symbol identity, outgoing relationships and incoming usages |
+| `/entry-points`, `/entry-points/trace` | routes and their configuration traces |
+| `/trace` | component traversal with bounds, path state, evidence and truncation |
+| `/tables`, `/tables/[id]` | table impact (READ/WRITE/MAPPING, direct vs transitive) and table usages |
+| `/scan` | active scan status, freshness metadata and scan history |
+| `/errors` | localized analysis errors for a scan |
+
+Pages render on demand (`force-dynamic`, uncached `fetch`), so a build does not need a
+running backend. `npm run lint` is also available.
 
 ## Validation and version control
 
-See [Slice 6 validation](docs/validation/SLICE_06_VALIDATION.md),
+See [Slice 7 validation](docs/validation/SLICE_07_VALIDATION.md),
+[Slice 6 validation](docs/validation/SLICE_06_VALIDATION.md),
 [Slice 5 validation](docs/validation/SLICE_05_VALIDATION.md),
 [Slice 4 validation](docs/validation/SLICE_04_VALIDATION.md),
 [Slice 3 validation](docs/validation/SLICE_03_VALIDATION.md),
 [Slice 2 validation](docs/validation/SLICE_02_VALIDATION.md),
 [Slice 1 validation](docs/validation/SLICE_01_VALIDATION.md), and the earlier
 [Slice 0 record](docs/validation/SLICE_00_VALIDATION.md).
-Validation records identify the commit under test when available. Slice 3–6 changes
+Validation records identify the commit under test when available. Slice 3–7 changes
 are uncommitted. Root ignore rules exclude generated output and local credentials.
