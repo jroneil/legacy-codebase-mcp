@@ -36,6 +36,8 @@ public class SymbolStore {
     public record Search(Freshness freshness, Page<Symbol> candidates) {}
     public record Detail(Freshness freshness, Symbol symbol, Page<Relationship> outgoing) {}
     public record Usages(Freshness freshness, Page<Relationship> usages) {}
+    public record Tables(Freshness freshness, Page<Symbol> tables) {}
+    public record Location(Freshness freshness, String path, int line, Page<Symbol> symbols) {}
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public Search search(String query, int limit, int offset) {
@@ -62,6 +64,32 @@ public class SymbolStore {
         Freshness freshness = requiredActive();
         find(freshness.scanId(), id);
         return new Usages(freshness, relationships(freshness.scanId(), id, true, limit, offset));
+    }
+
+    /** Bounded listing of indexed database tables for the active completed scan. */
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public Tables tables(int limit, int offset) {
+        Freshness freshness = active();
+        if (freshness == null) return new Tables(null, page(List.of(), 0, limit, offset));
+        String where = "scan_id=? AND kind='DATABASE_TABLE'";
+        long count = jdbc.queryForObject("SELECT count(*) FROM java_symbol WHERE " + where, Long.class, freshness.scanId());
+        var items = jdbc.query("SELECT * FROM java_symbol WHERE " + where + " ORDER BY stable_id LIMIT ? OFFSET ?",
+                this::symbol, freshness.scanId(), limit, offset);
+        return new Tables(freshness, page(items, count, limit, offset));
+    }
+
+    /** Symbols whose indexed source range contains the repository-relative path and line; innermost span first. */
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public Location locate(String path, int line, int limit, int offset) {
+        Freshness freshness = active();
+        if (freshness == null) return new Location(null, path, line, page(List.of(), 0, limit, offset));
+        String where = "scan_id=? AND source_path=? AND start_line<=? AND end_line>=?";
+        long count = jdbc.queryForObject("SELECT count(*) FROM java_symbol WHERE " + where, Long.class,
+                freshness.scanId(), path, line, line);
+        var items = jdbc.query("SELECT * FROM java_symbol WHERE " + where
+                + " ORDER BY (end_line - start_line) ASC, start_line DESC, stable_id LIMIT ? OFFSET ?",
+                this::symbol, freshness.scanId(), path, line, line, limit, offset);
+        return new Location(freshness, path, line, page(items, count, limit, offset));
     }
 
     private Page<Relationship> relationships(UUID scan, String id, boolean incoming, int limit, int offset) {

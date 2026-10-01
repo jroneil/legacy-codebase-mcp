@@ -75,6 +75,12 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc</artifactId>
 		</dependency>
+		<!-- Slice 6: MCP server over the existing servlet stack. 2.0.1 pins Spring Boot 4.1.1 dependencies. -->
+		<dependency>
+			<groupId>org.springframework.ai</groupId>
+			<artifactId>spring-ai-starter-mcp-server-webmvc</artifactId>
+			<version>2.0.1</version>
+		</dependency>
 
 		<dependency>
 			<groupId>org.postgresql</groupId>

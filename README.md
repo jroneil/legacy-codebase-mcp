@@ -418,6 +418,52 @@ stable ID for a narrower query; there is no continuation cursor in this slice.
 No schema, parser, analyzer-version or dependency changes are required. No target
 code executes. Existing scan publication and immutable evidence remain unchanged.
 
+## MCP interface (Slice 6)
+
+The backend embeds an MCP server over **Streamable HTTP** on the existing
+servlet stack. It is enabled by `spring.ai.mcp.server.protocol=STREAMABLE` and
+listens at `http://127.0.0.1:8080/mcp` (the server binds loopback only). The
+implementation is `org.springframework.ai:spring-ai-starter-mcp-server-webmvc:2.0.1`,
+which pins Spring Boot 4.1.1 and the official MCP Java SDK 2.0.0.
+
+Every tool is a thin adapter over the same services the REST controllers use:
+
+| MCP tool | Backing service (same as REST) |
+| --- | --- |
+| `search_symbols` | `SymbolStore.search` (`GET /api/symbols/search`) |
+| `get_symbol` | `SymbolStore.detail` (`GET /api/symbols/detail`) |
+| `find_usages` | `SymbolStore.usages` (`GET /api/symbols/usages`) |
+| `trace_component` | `TraversalQueries.query(TRACE)` (`GET /api/relationships/trace`) |
+| `list_database_tables` | `SymbolStore.tables` (same store/freshness as the symbol APIs) |
+| `find_table_usages` | `TraversalQueries.query(TABLE_USAGES)` (`GET /api/relationships/table-usages`) |
+| `inspect_location` | `SymbolStore.locate` + `SymbolStore.detail`/`usages` |
+| `list_entry_points` | `FrameworkQueries.entries` (`GET /api/entry-points`) |
+
+Results are bounded and deterministic. List tools accept `limit` (1..200,
+default 50) and an opaque `cursor`, and return `returnedCount`, `totalCount`,
+`truncated` and `nextCursor`. Traversal tools accept `maxDepth` (0..16),
+`limit` (1..500) and `fanOut` (1..200), and return the applied bounds plus
+`truncated` and ordered `truncationReasons`. Every response carries scan
+freshness (`scanId`, `gitCommitSha`, `analyzerVersion`, `scanCompletedAt`) from
+the active completed snapshot, or `null` when no scan is active. Resolution
+states, ambiguity candidates, weakest-edge path confidence and evidence
+locations are passed through unchanged; no source file content or raw SQL/XML
+is returned. Tool errors (no active scan, unknown stable ID, invalid bounds or
+`inspect_location` line) are reported in the `error` field rather than as
+protocol failures.
+
+Local client configuration for a coding agent (Codex CLI, `~/.codex/config.toml`):
+
+```toml
+[mcp_servers.legacy-codebase]
+url = "http://127.0.0.1:8080/mcp"
+enabled = true
+```
+
+Any Streamable HTTP MCP client can use the same URL. The endpoint exposes
+source-derived code intelligence to the connected agent; keep it on loopback
+and treat that boundary as documented in `AGENTS.md`.
+
 ## Frontend
 
 ```bash
@@ -433,11 +479,12 @@ features or frontend test suite have been added.
 
 ## Validation and version control
 
-See [Slice 5 validation](docs/validation/SLICE_05_VALIDATION.md),
+See [Slice 6 validation](docs/validation/SLICE_06_VALIDATION.md),
+[Slice 5 validation](docs/validation/SLICE_05_VALIDATION.md),
 [Slice 4 validation](docs/validation/SLICE_04_VALIDATION.md),
 [Slice 3 validation](docs/validation/SLICE_03_VALIDATION.md),
 [Slice 2 validation](docs/validation/SLICE_02_VALIDATION.md),
 [Slice 1 validation](docs/validation/SLICE_01_VALIDATION.md), and the earlier
 [Slice 0 record](docs/validation/SLICE_00_VALIDATION.md).
-Validation records identify the commit under test when available. Slice 3–5 changes
+Validation records identify the commit under test when available. Slice 3–6 changes
 are uncommitted. Root ignore rules exclude generated output and local credentials.
