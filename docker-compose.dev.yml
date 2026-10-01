@@ -1,0 +1,7 @@
+# Host-side only: publishes PostgreSQL on loopback so a backend running on the
+# host (./mvnw spring-boot:run) can reach the Compose database.
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-54329}:5432"

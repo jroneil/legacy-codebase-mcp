@@ -12,6 +12,10 @@ import org.springframework.stereotype.Component;
 /** Static XML evidence only. Never loads application classes or instantiates a Spring context. */
 @Component
 public class FrameworkIndexer {
+    /** Request-parameter DispatchAction variants: org.apache.struts.actions and the Struts 1.3 extras location. */
+    private static final Set<String> DISPATCH_TYPES = Set.of("org.apache.struts.actions.DispatchAction",
+            "org.apache.struts.extras.actions.DispatchAction");
+
     public Index index(Path root, Inventory inventory, Index javaIndex) {
         return new Session(root, inventory, javaIndex).run();
     }
@@ -333,8 +337,10 @@ public class FrameworkIndexer {
             if (!visited.add(cls)) return false;
             for (var edge : edges) if (edge.sourceId().equals("java:type:" + cls) && edge.type().equals("EXTENDS")) {
                 String parent = edge.targetId() == null ? edge.targetDescription() : edge.targetId().replaceFirst("^java:type:", "");
-                if ("org.apache.struts.actions.DispatchAction".equals(parent)) return true;
-                if ("DispatchAction".equals(parent) && edges.stream().anyMatch(e -> e.type().equals("IMPORTS") && e.sourcePath().equals(edge.sourcePath()) && "org.apache.struts.actions.DispatchAction".equals(e.targetDescription()))) return true;
+                if (DISPATCH_TYPES.contains(parent)) return true;
+                if ("DispatchAction".equals(parent) && edges.stream().anyMatch(e -> e.type().equals("IMPORTS") && e.sourcePath().equals(edge.sourcePath()) && DISPATCH_TYPES.contains(e.targetDescription()))) return true;
+                // Mapping/lookup dispatch choose the method from configuration or a resource key, not a request parameter.
+                if (parent != null && (parent.endsWith("MappingDispatchAction") || parent.endsWith("LookupDispatchAction"))) continue;
                 if (parent != null && dispatch(parent, visited)) return true;
             }
             return false;

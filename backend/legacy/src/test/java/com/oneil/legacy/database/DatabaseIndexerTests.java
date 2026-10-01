@@ -30,6 +30,28 @@ class DatabaseIndexerTests {
         var javaIndex = new JavaSymbolIndexer().index(root, inventory);
         return new DatabaseIndexer().index(root, inventory, new FrameworkIndexer().index(root, inventory, javaIndex));
     }
+    @Test void bareKeywordTaskTokensAreNotTreatedAsSql() throws Exception {
+        Files.writeString(root.resolve("src/demo/TaskTokens.java"), """
+                package demo;
+                public class TaskTokens {
+                    public static final String DELETE = "Delete";
+                    public static final String CLEANUP = "DELETE FROM CUSTOMER WHERE id = ?";
+                    public void run() { final String method = TaskTokens.DELETE; }
+                }
+                """);
+        var index = index();
+        var artifacts = index.symbols().stream()
+                .filter(s -> s.kind().equals("QUERY_ARTIFACT") && s.sourcePath().equals("src/demo/TaskTokens.java")).toList();
+        // Only the real statement is a query: the bare "Delete" task token is not SQL.
+        assertThat(artifacts).hasSize(1);
+        assertThat(index.errors()).noneMatch(e -> e.code().equals("SQL_PARSE") && "src/demo/TaskTokens.java".equals(e.relativePath()));
+        assertThat(index.relationships()).anySatisfy(e -> {
+            assertThat(e.sourceId()).isEqualTo(artifacts.getFirst().stableId());
+            assertThat(e.type()).isEqualTo("WRITES_TABLE");
+            assertThat(e.targetId()).isEqualTo("db:table:CUSTOMER");
+        });
+    }
+
     static Stream<Arguments> statements() {
         return Stream.of(
             Arguments.of("SELECT * FROM CUSTOMER", Set.of("CUSTOMER"), Set.of()),

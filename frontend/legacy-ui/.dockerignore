@@ -1,0 +1,11 @@
+node_modules/
+.next/
+out/
+coverage/
+.git/
+.gitignore
+Dockerfile
+.dockerignore
+*.md
+AGENTS.md
+CLAUDE.md

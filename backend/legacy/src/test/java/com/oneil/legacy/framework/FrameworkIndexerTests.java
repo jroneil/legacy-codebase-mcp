@@ -158,6 +158,48 @@ class FrameworkIndexerTests {
         assertThat(index.relationships()).filteredOn(e -> e.type().equals("FORWARDS_TO"))
                 .singleElement().satisfies(e -> assertThat(e.resolutionState()).isEqualTo("UNRESOLVED"));
     }
+    @Test void extrasDispatchActionIsRecognizedButMappingAndLookupDispatchAreNot() throws Exception {
+        Path other = root.resolve("extras-dispatch");
+        Files.createDirectories(other.resolve("web/WEB-INF"));
+        Files.writeString(other.resolve("web/WEB-INF/struts-config.xml"), """
+                <struts-config><action-mappings>
+                  <action path="/extras" type="demo.ExtrasDispatchAction" parameter="dispatchMethod"/>
+                  <action path="/mapping" type="demo.MappingExampleAction" parameter="doFoo"/>
+                  <action path="/lookup" type="demo.LookupExampleAction" parameter="dispatchMethod"/>
+                </action-mappings></struts-config>
+                """);
+        Files.createDirectories(other.resolve("src/demo"));
+        // Struts 1.3 moved DispatchAction to the extras module; unresolved parents keep their written name.
+        Files.writeString(other.resolve("src/demo/ExtrasDispatchAction.java"), dispatchClass("ExtrasDispatchAction", "org.apache.struts.extras.actions.DispatchAction"));
+        Files.writeString(other.resolve("src/demo/MappingExampleAction.java"), dispatchClass("MappingExampleAction", "org.apache.struts.extras.actions.MappingDispatchAction"));
+        Files.writeString(other.resolve("src/demo/LookupExampleAction.java"), dispatchClass("LookupExampleAction", "org.apache.struts.extras.actions.LookupDispatchAction"));
+        var inventory = new RepositoryInventory().collect(other);
+        var index = new FrameworkIndexer().index(other, inventory, new JavaSymbolIndexer().index(other, inventory));
+        String config = "web/WEB-INF/struts-config.xml";
+
+        var extras = methodEdges(index, "struts:route:" + config + "#/extras");
+        assertThat(extras).hasSize(2).allSatisfy(e -> {
+            assertThat(e.resolutionState()).isEqualTo("INFERRED");
+            assertThat(e.targetDescription()).startsWith("request parameter dispatchMethod=");
+        });
+        // Mapping/lookup dispatch select the method from configuration or a resource key, not a request parameter.
+        assertThat(methodEdges(index, "struts:route:" + config + "#/mapping")).isEmpty();
+        assertThat(methodEdges(index, "struts:route:" + config + "#/lookup")).isEmpty();
+    }
+
+    static String dispatchClass(String name, String parent) {
+        String params = "org.apache.struts.action.ActionMapping mapping, org.apache.struts.action.ActionForm form, "
+                + "javax.servlet.http.HttpServletRequest request, javax.servlet.http.HttpServletResponse response";
+        return "package demo;\npublic class " + name + " extends " + parent + " {\n"
+                + "  public org.apache.struts.action.ActionForward doFoo(" + params + ") { return null; }\n"
+                + "  public org.apache.struts.action.ActionForward doBar(" + params + ") { return null; }\n}\n";
+    }
+
+    static List<Relationship> methodEdges(Index index, String source) {
+        return index.relationships().stream().filter(e -> e.sourceId().equals(source) && e.targetId() != null
+                && e.targetId().startsWith("java:method:")).toList();
+    }
+
     static void assertEdge(Index index, String from, String to, String type, String state) {
         assertThat(index.relationships()).anySatisfy(e -> {
             assertThat(e.sourceId()).isEqualTo(from); assertThat(e.targetId()).isEqualTo(to);

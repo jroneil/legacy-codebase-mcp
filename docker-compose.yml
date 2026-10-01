@@ -1,21 +1,60 @@
 name: legacy-codebase-mcp
 
+# Default path: docker compose up --build
+#   cp .env.example .env, set LEGACY_REPOSITORY_ROOT and POSTGRES_PASSWORD, then start.
+# Only PostgreSQL, the backend and the frontend run here. The analyzed repository is
+# mounted read-only; no target build or target code is executed.
+
 services:
   postgres:
     image: postgres:17.11-alpine
     environment:
-      POSTGRES_DB: legacy
-      POSTGRES_USER: legacy
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your shell}
-    ports:
-      - "127.0.0.1:${POSTGRES_PORT:-54329}:5432"
+      POSTGRES_DB: ${POSTGRES_DB:-legacy}
+      POSTGRES_USER: ${POSTGRES_USER:-legacy}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U legacy -d legacy"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-legacy} -d ${POSTGRES_DB:-legacy}"]
       interval: 5s
       timeout: 5s
       retries: 12
+    # Not published to the host. For host-based backend development use
+    # docker-compose.dev.yml, which adds a loopback-only port mapping.
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend/legacy
+    environment:
+      # Container-internal database hostname; no host PostgreSQL port is needed.
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-legacy}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-legacy}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      # Fixed path inside the container; the host repository is mounted there read-only.
+      LEGACY_REPOSITORY_ROOT: /workspace/target
+      ANALYZER_VERSION: ${ANALYZER_VERSION:-grails-index-5}
+    volumes:
+      - "${LEGACY_REPOSITORY_ROOT:?Set LEGACY_REPOSITORY_ROOT in .env}:/workspace/target:ro"
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend/legacy-ui
+    environment:
+      # Server-side backend URL resolved on the Compose network, never in the browser.
+      LEGACY_API_BASE_URL: http://backend:8080
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   postgres-data:

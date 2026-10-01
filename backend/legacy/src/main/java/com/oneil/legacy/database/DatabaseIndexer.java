@@ -22,7 +22,13 @@ public class DatabaseIndexer {
     public Index index(Path root, Inventory inventory, Index existing) { return new Session(root, inventory, existing).run(); }
     private record Location(String path, int line, int column, int endLine, int endColumn) {}
     private record Value(String template, boolean complete) {}
-    private static final Pattern SQL_START = Pattern.compile("(?is)^\\s*(?:select|insert|update|delete|merge|with|call|exec|begin)\\b.*");
+    private static final Pattern SQL_START = Pattern.compile("(?is)^\\s*(?:select|insert|update|delete|merge|with|call|exec|begin)\\b(.*)$");
+
+    /** A SQL candidate needs a statement body; a bare task token such as "Delete" is not SQL. */
+    static boolean looksLikeSql(String template) {
+        var match = SQL_START.matcher(template);
+        return match.matches() && !match.group(1).trim().isEmpty();
+    }
     private static final Pattern HQL = Pattern.compile("(?is)^\\s*(?:select\\s+(?:distinct\\s+)?[\\w.,\\s]+\\s+)?from\\s+([\\w.$]+)(?:\\s+(?:as\\s+)?(?!where\\b)\\w+)?(?:\\s+where\\s+[\\w.$]+\\s*(?:=|<>|>=|<=|>|<)\\s*(?::\\w+|\\?|\\d+|'(?:''|[^'])*'))?\\s*$");
     private static final Set<String> JDBC_EXECUTE = Set.of("execute", "executeQuery", "executeUpdate", "executeLargeUpdate");
     private static final Set<String> TEMPLATE_EXECUTE = Set.of("query", "queryForObject", "queryForList", "queryForMap", "queryForRowSet", "update", "execute", "batchUpdate");
@@ -71,7 +77,7 @@ public class DatabaseIndexer {
                 try {
                     for (VariableDeclarator variable : cu.findAll(VariableDeclarator.class)) if (variable.getInitializer().isPresent()) {
                         Value value = evaluate(variable.getInitializer().orElseThrow(), new HashSet<>(), 0);
-                        if (SQL_START.matcher(value.template).matches()) {
+                        if (looksLikeSql(value.template)) {
                             Location at = location(path, variable);
                             String id = query(at, "SQL", value, expression(variable.getInitializer().orElseThrow()), null);
                             edge(owner(path, variable), id, "SQL declaration", "DECLARES_QUERY", "RESOLVED", at, "JAVA_SQL");

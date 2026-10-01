@@ -1,63 +1,203 @@
 # Legacy Codebase MCP Server
 
-Deterministic code intelligence for legacy Struts/Grails applications. Slice 5
-adds bounded relationship traversal and database-impact paths over the immutable
-Java, framework, and database index. MCP and the explorer follow in later slices.
-The frontend remains the generated Next.js scaffold.
+Deterministic, evidence-backed code intelligence for legacy Struts and Grails
+applications, exposed to coding agents over MCP and to people over REST and a small
+read-only web explorer.
+
+## Why this project exists
+
+Coding agents are good at interpretation and slow at repetitive archaeology. Answering
+"which URL reaches this action?", "what service does it call?", "which tables can that
+path read or write?" means reading dozens of Java, XML, Groovy and JSP files before any
+real work starts — and repeating it for the next question.
+
+This server does that discovery once, deterministically, and stores the result:
+
+- **Repetitive codebase discovery moves out of the LLM and into indexed tooling.** The
+  analyzer walks the repository, parses sources and configuration, and builds a
+  normalized model of symbols, framework wiring, dependency paths and database usage.
+- **The analysis is repeatable and cited.** Every relationship carries `RESOLVED`,
+  `INFERRED` or `UNRESOLVED` state plus source file/line evidence, and identical input
+  produces identical output. Uncertainty is preserved rather than guessed away.
+- **The agent consumes structured evidence instead of rediscovering it.** MCP tools
+  (`search_symbols`, `get_symbol`, `find_usages`, `trace_component`,
+  `list_database_tables`, `find_table_usages`, `inspect_location`, `list_entry_points`)
+  return bounded, evidence-backed answers, so the model's reasoning goes into
+  interpretation. REST exposes the same services, and the explorer shows the same
+  snapshot.
+- **No LLM API is required inside the application.** Core analysis is local and static:
+  no model calls, no embeddings, no source code sent anywhere. You bring the agent; this
+  server supplies the evidence.
 
 Scope and acceptance criteria: [PRD](docs/PRD.md) and
-[implementation plan](docs/IMPLEMENTATION_PLAN.md).
+[implementation plan](docs/IMPLEMENTATION_PLAN.md). What is proven, and what is not, is
+recorded in the [validation records](docs/validation/) — including
+[real-repository validation](docs/validation/REAL_REPOSITORY_VALIDATION.md).
 
-## Prerequisites
+## Quick start
 
-- Java 21; Maven wrapper at `backend/legacy/mvnw` downloads Maven 3.9.16.
-- Docker with Docker Compose. Backend tests use disposable PostgreSQL
-  Testcontainers and require a working Docker daemon; no test database setup
-  or datasource credentials are needed.
-- Node.js 24 and npm for the frontend (validated with Node 24.18.0 / npm 12.1.0).
-  With NVM, load NVM and select Node 24 in the current shell.
-
-## Local database and backend
-
-From the repository root, configure a password without putting it in shell
-history and start PostgreSQL:
+Requirements: Docker with Docker Compose, and a legacy repository to analyze.
 
 ```bash
-read -rsp 'Local PostgreSQL password: ' POSTGRES_PASSWORD
-export POSTGRES_PASSWORD
-export POSTGRES_PORT=54329
-export SPRING_DATASOURCE_URL="jdbc:postgresql://127.0.0.1:${POSTGRES_PORT}/legacy"
+git clone <this-repository> legacy-codebase-mcp
+cd legacy-codebase-mcp
+cp .env.example .env
+# edit .env: set LEGACY_REPOSITORY_ROOT and POSTGRES_PASSWORD
+docker compose up --build
+```
+
+The first build compiles the backend and frontend inside Docker, so it downloads Maven
+and npm dependencies and takes several minutes. Later starts reuse the images and take
+seconds. PostgreSQL, the backend and the frontend start in that order, each gated on the
+previous service's health check.
+
+| What | URL |
+| --- | --- |
+| Explorer UI | http://127.0.0.1:3000 |
+| REST API | http://127.0.0.1:8080 |
+| MCP endpoint | http://127.0.0.1:8080/mcp |
+| Backend health | http://127.0.0.1:8080/actuator/health |
+
+All host ports bind to loopback only, and PostgreSQL is not published to the host.
+
+### Required `.env` values
+
+| Variable | Meaning |
+| --- | --- |
+| `LEGACY_REPOSITORY_ROOT` | Absolute path **on the host** to the repository to analyze. It is mounted read-only at `/workspace/target` inside the backend container. Use a physical path: symlinked roots are rejected by the scanner. |
+| `POSTGRES_PASSWORD` | Any local password. It initializes a new PostgreSQL volume; changing it later does not change an existing volume. |
+
+Optional values, with defaults shown: `POSTGRES_DB=legacy`, `POSTGRES_USER=legacy`,
+`ANALYZER_VERSION=grails-index-5` (recorded with each snapshot as freshness metadata),
+`BACKEND_PORT=8080`, `FRONTEND_PORT=3000`, and `POSTGRES_PORT=54329` (used only by the
+native workflow below). `.env` is gitignored; never commit it.
+
+## Create a scan
+
+The backend analyzes whatever `LEGACY_REPOSITORY_ROOT` points at when the container
+starts; the path is never accepted from a request. Start a scan and confirm what ran:
+
+```bash
+curl -s -X POST http://127.0.0.1:8080/api/scans | tee scan.json
+python3 -c "import json;s=json.load(open('scan.json'))['scan'];print(s['repositoryRoot'],s['status'],s['fileCount'],s['errorCount'])"
+```
+
+`POST /api/scans` is synchronous: the response arrives when the scan finishes, and a
+large repository can take minutes, so allow a long client timeout (`curl --max-time 0`).
+Progress is not streamed. A failed scan leaves the previous active snapshot in place; an
+unset path returns 503 without creating a scan. See
+[Scan API](#scan-api) for the full contract.
+
+Then explore the active snapshot:
+
+```bash
+curl -s 'http://127.0.0.1:8080/api/symbols/search?q=Customer&limit=20'
+curl -s --get 'http://127.0.0.1:8080/api/relationships/trace' --data-urlencode 'component=/customer/search'
+curl -s --get 'http://127.0.0.1:8080/api/relationships/database-tables' --data-urlencode 'component=/customer/search'
+curl -s --get 'http://127.0.0.1:8080/api/entry-points' --data-urlencode 'path=/customer/search'
+```
+
+Open the UI at http://127.0.0.1:3000 or point an MCP client at
+http://127.0.0.1:8080/mcp (see [MCP interface](#mcp-interface-slice-6)).
+
+## Point at a different repository
+
+`LEGACY_REPOSITORY_ROOT` is read when the backend container starts, so edit `.env` and
+recreate that service:
+
+```bash
+# edit LEGACY_REPOSITORY_ROOT in .env
+docker compose up -d --force-recreate backend
+```
+
+Each scan creates a new immutable snapshot; older snapshots stay queryable by ID, and
+the newest successful scan becomes the active one.
+
+Every snapshot records the container path `/workspace/target` as its repository root, so
+after switching repositories set `ANALYZER_VERSION` in `.env` to a label that identifies
+the codebase (for example `struts1-2026-10`) to tell snapshots apart. `gitCommitSha` is
+also recorded when the analyzed repository is a Git working tree.
+
+## Stop, start, and reset
+
+```bash
+docker compose stop            # stop the stack; keep the database volume and scan history
+docker compose start           # start it again against the same data
+docker compose down            # remove containers and network; keep the database volume
+docker compose up -d --wait    # start again after down; earlier scans are still there
+docker compose down --volumes  # DESTRUCTIVE: delete the PostgreSQL volume and all scan history
+docker compose ps              # service status and health
+docker compose logs -f backend # follow backend logs
+docker compose exec postgres psql -U legacy -d legacy   # inspect the database (exit with \q)
+```
+
+## Security boundary
+
+- The analyzed repository is mounted **read-only**; the analyzer never writes to it and
+  never builds or executes target code.
+- PostgreSQL has no host port. Only the backend reaches it, over the Compose network.
+- UI, REST and MCP bind to `127.0.0.1` only, so MCP stays local.
+- Credentials live in `.env`, which is gitignored. Nothing secret is committed.
+- Analysis is static and local; no source leaves the machine.
+
+## Container images
+
+| Image | Base | Notes |
+| --- | --- | --- |
+| backend (`backend/legacy/Dockerfile`) | `maven:3.9-eclipse-temurin-21` build → `eclipse-temurin:21-jre-alpine` runtime | Multi-stage; the runtime image has no Maven and runs as a non-root user. Tests are not built or run in the image. |
+| frontend (`frontend/legacy-ui/Dockerfile`) | `node:24-alpine` for dependencies, build and runtime | Next.js `output: "standalone"`; the runtime stage copies `server.js` and static assets only, and runs as a non-root user. |
+
+The backend listens on `0.0.0.0:8080` *inside* its container so the loopback-only host
+port mapping and the frontend container can reach it. The analyzer's only new runtime
+setting is `SERVER_ADDRESS`; no analyzer, REST, MCP or schema behavior changes.
+
+## Native developer workflow (contributors)
+
+For changing the analyzer itself, run the pieces on the host. This keeps fast Java
+iteration and the frontend test suite available. It needs Java 21 (the Maven wrapper at
+`backend/legacy/mvnw` downloads Maven 3.9.16), Node.js 24 with npm, and a working Docker
+daemon for the database and for backend tests (Testcontainers).
+
+```bash
+# 1. PostgreSQL on loopback. The default Compose stack does not publish it, so add the
+#    development override (docker-compose.dev.yml).
+export POSTGRES_PASSWORD=local-dev-only
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --wait postgres
+
+# 2. Backend on the host.
+export SPRING_DATASOURCE_URL="jdbc:postgresql://127.0.0.1:${POSTGRES_PORT:-54329}/legacy"
 export SPRING_DATASOURCE_USERNAME=legacy
 export SPRING_DATASOURCE_PASSWORD="$POSTGRES_PASSWORD"
 export LEGACY_REPOSITORY_ROOT=/absolute/path/to/legacy/source
-export ANALYZER_VERSION=grails-index-5
-
-docker compose up -d --wait postgres
 cd backend/legacy
-./mvnw test
-./mvnw package
 ./mvnw spring-boot:run
+
+# 3. Frontend on the host (optional).
+cd frontend/legacy-ui
+npm ci
+LEGACY_API_BASE_URL=http://127.0.0.1:8080 npm run dev
 ```
 
-Flyway applies V1 (scan foundation), V2 (Java symbols), V3 (framework mappings),
-and `V4__database_usage.sql` (database/query symbol and relationship kinds). Hibernate is configured
-with `ddl-auto=validate`, never create/update. Persistence uses JDBC, so migration
-and integration tests validate its relational schema; there are no JPA entity
-mappings yet. Remove any old `SPRING_JPA_HIBERNATE_DDL_AUTO` override from Slice 0.
-Check `http://127.0.0.1:8080/actuator/health` for `UP`.
+`./mvnw spring-boot:run` compiles and runs the backend directly, so `./mvnw package` is
+not required first. The full backend suite (`cd backend/legacy && ./mvnw test`) and the
+frontend tests and build (`cd frontend/legacy-ui && npm test && npm run build`) use
+disposable resources and need no manual database setup. Without the development
+override, `SERVER_ADDRESS` stays at its default and the backend binds loopback only.
 
-The backend and PostgreSQL bind only to loopback by default. Override
-`POSTGRES_PORT` before setting the datasource URL if the port is occupied.
-Credentials are externalized. The password initializes a new volume only;
-use the existing password when restarting an initialized database.
-From the root, `docker compose stop` preserves data. Do not remove an existing
-volume unless you intend to delete its scan history.
+To build the images without starting them:
+
+```bash
+docker compose build
+```
 
 ## Scan API
 
 `POST /api/scans` synchronously inventories the configured root. No target path
-is accepted from the request. An unset root returns 503 without creating a
-scan. `ANALYZER_VERSION` defaults to `grails-index-5` and can be overridden.
+is accepted from the request, and the root is bound at startup from
+`LEGACY_REPOSITORY_ROOT` (see [Point at a different repository](#point-at-a-different-repository)).
+An unset root returns 503 without creating a scan. `ANALYZER_VERSION` defaults to
+`grails-index-5` and can be overridden. Large repositories take minutes, so allow a
+long client timeout.
 
 ```bash
 curl -i -X POST http://127.0.0.1:8080/api/scans
@@ -470,6 +610,10 @@ The Next.js App Router UI is a read-only inspection interface over the REST API.
 contains no analysis logic: every relationship, resolution state, access kind,
 directness and truncation flag is displayed exactly as the backend returns it.
 
+In the Compose stack it runs at http://127.0.0.1:3000 and reaches the backend over the
+Compose network (`LEGACY_API_BASE_URL=http://backend:8080`). To run it on the host
+instead, as in the [native workflow](#native-developer-workflow-contributors):
+
 ```bash
 cd frontend/legacy-ui
 npm ci
@@ -576,7 +720,11 @@ chain is returned by `/api/relationships/trace`.
 
 ## Validation and version control
 
-See [Slice 8.1 validation](docs/validation/SLICE_08_1_VALIDATION.md),
+See [Slice 9 validation](docs/validation/SLICE_09_VALIDATION.md) (containerized
+distribution),
+the [real-repository validation](docs/validation/REAL_REPOSITORY_VALIDATION.md)
+(accuracy against the real `weblegacy/struts1` codebase, including the defects it found),
+[Slice 8.1 validation](docs/validation/SLICE_08_1_VALIDATION.md),
 [Slice 8 validation](docs/validation/SLICE_08_VALIDATION.md),
 [Slice 7 validation](docs/validation/SLICE_07_VALIDATION.md),
 [Slice 6 validation](docs/validation/SLICE_06_VALIDATION.md),
@@ -586,5 +734,6 @@ See [Slice 8.1 validation](docs/validation/SLICE_08_1_VALIDATION.md),
 [Slice 2 validation](docs/validation/SLICE_02_VALIDATION.md),
 [Slice 1 validation](docs/validation/SLICE_01_VALIDATION.md), and the earlier
 [Slice 0 record](docs/validation/SLICE_00_VALIDATION.md).
-Validation records identify the commit under test when available. Slice 8.1 changes are
-uncommitted. Root ignore rules exclude generated output and local credentials.
+Validation records identify the commit under test when available. Uncommitted work:
+the real-repository validation defect fixes and Slice 9 (containerization). Root ignore
+rules exclude generated output, local credentials and `.env`.
