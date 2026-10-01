@@ -494,14 +494,22 @@ Google font loading needs network access during a fresh build. Routes:
 Pages render on demand (`force-dynamic`, uncached `fetch`), so a build does not need a
 running backend. `npm run lint` is also available.
 
-## Grails mapping (Slice 8)
+## Grails mapping (Slices 8, 8.1)
 
 Groovy sources are parsed statically with the official Groovy AST
 (`org.apache.groovy:groovy`, version managed by Spring Boot 4.1.1) up to the
 **conversion phase only**: target code is never compiled, loaded or executed. The
-supported baseline is the **Grails 3.x–6.x** layout
-(`grails-app/{controllers,services,domain,conf/spring}`); the Grails 2.x
-`UrlMappings.groovy` location is also recognized. This is not generic Grails support.
+supported baseline is **Grails 2.6 plus representative Grails 3.x–6.x layouts**:
+
+- `grails-app/conf/UrlMappings.groovy` (Grails 2.6) and
+  `grails-app/controllers/**/UrlMappings.groovy` (Grails 3.x+), including Grails 2.x
+  named mappings (`name customerList: "/customers"(controller: …)`) and per-mapping
+  constraint closures;
+- `grails-app/conf/spring/resources.groovy` in both layouts;
+- `grails-app/{controllers,services,domain}` and `src/groovy`, which are identical
+  across those versions.
+
+This is not generic Grails 2.x or generic Grails support.
 
 Indexed constructs, all into the existing normalized model (no new symbol kinds,
 relationship types or schema changes):
@@ -534,6 +542,13 @@ Conventional table names follow the Grails/Hibernate physical naming rule
 (`CustomerOrder` → `customer_order`). Malformed Groovy records a localized
 `GROOVY`/`GROOVY_PARSE` analysis error and does not fail the scan.
 
+Legacy Grails 2.x boundaries: named mappings keep their mapping name as route
+evidence (`name=customerList; controller=customer; action=list`), a nested
+per-mapping constraint closure (`id matches: /\d+/`) is not treated as a route, and
+a closure action (`def list = { … }`) is **not** published as a method — its route
+resolves to the controller class with a description saying the action is not
+statically indexed, rather than inventing a `RESOLVED` method edge.
+
 Example flow, reproducible from the fixture repository:
 
 ```text
@@ -561,7 +576,8 @@ chain is returned by `/api/relationships/trace`.
 
 ## Validation and version control
 
-See [Slice 8 validation](docs/validation/SLICE_08_VALIDATION.md),
+See [Slice 8.1 validation](docs/validation/SLICE_08_1_VALIDATION.md),
+[Slice 8 validation](docs/validation/SLICE_08_VALIDATION.md),
 [Slice 7 validation](docs/validation/SLICE_07_VALIDATION.md),
 [Slice 6 validation](docs/validation/SLICE_06_VALIDATION.md),
 [Slice 5 validation](docs/validation/SLICE_05_VALIDATION.md),
@@ -570,5 +586,5 @@ See [Slice 8 validation](docs/validation/SLICE_08_VALIDATION.md),
 [Slice 2 validation](docs/validation/SLICE_02_VALIDATION.md),
 [Slice 1 validation](docs/validation/SLICE_01_VALIDATION.md), and the earlier
 [Slice 0 record](docs/validation/SLICE_00_VALIDATION.md).
-Validation records identify the commit under test when available. Slice 3–8 changes
-are uncommitted. Root ignore rules exclude generated output and local credentials.
+Validation records identify the commit under test when available. Slice 8.1 changes are
+uncommitted. Root ignore rules exclude generated output and local credentials.

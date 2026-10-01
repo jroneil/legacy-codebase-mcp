@@ -45,6 +45,7 @@ public class GrailsIndexer {
                 "embedded", "mappedBy", "allowedMethods", "namespace", "log", "grailsApplication", "sessionFactory", "dataSource",
                 "servletContext", "errors", "version", "id", "dateCreated", "lastUpdated");
         static final Set<String> MAPPING_DSL = Set.of("group", "namespace", "plugin");
+        static final String NAMED_MAPPING = "name";
         static final Set<String> FINDER_PREFIXES = Set.of("findBy", "findAllBy", "countBy", "getBy", "listBy");
         static final Set<String> FINDERS = Set.of("get", "read", "list", "count", "exists", "find", "findAll", "findWhere", "findAllWhere");
         static final Comparator<Relationship> ORDER = Comparator.comparing(Relationship::sourceId).thenComparing(Relationship::type)
@@ -241,10 +242,23 @@ public class GrailsIndexer {
             for (Expression argument : arguments(call)) if (argument instanceof ClosureExpression nested) walkMappings(nested.getCode(), contextId, path);
         }
 
-        void mapping(MethodCallExpression call, String contextId, String path) {
+        void mapping(MethodCallExpression call, String contextId, String path) { mapping(call, contextId, path, null); }
+
+        void mapping(MethodCallExpression call, String contextId, String path, String mappingName) {
             String uri = routeText(call.getMethod());
             if (uri == null || MAPPING_DSL.contains(uri)) return;
             Map<String, Expression> named = namedArguments(call);
+            // Grails 2.x named mapping: name customerList: "/customers"(controller: "customer", action: "list").
+            if (mappingName == null && NAMED_MAPPING.equals(uri) && named.size() == 1) {
+                var entry = named.entrySet().iterator().next();
+                if (entry.getValue() instanceof MethodCallExpression inner) {
+                    mapping(inner, contextId, path, entry.getKey());
+                    for (Expression argument : arguments(inner)) if (argument instanceof ClosureExpression nested) walkMappings(nested.getCode(), contextId, path);
+                }
+                return;
+            }
+            // A nested Grails 2.x constraint entry (for example `id matches: /\d+/`) is not a route.
+            if (!uri.startsWith("/") && !uri.matches("\\d{3}")) return;
             String controller = stringValue(named.get("controller"));
             String action = stringValue(named.get("action"));
             String resource = stringValue(named.get("resources"));
@@ -253,6 +267,7 @@ public class GrailsIndexer {
             String id = "grails:route:" + path + "#" + uri;
             if (symbols.containsKey(id)) id += "@" + call.getLineNumber() + ":" + call.getColumnNumber();
             String signature = controller == null && action == null ? null : "controller=" + controller + "; action=" + action;
+            if (mappingName != null) signature = "name=" + mappingName + (signature == null ? "" : "; " + signature);
             symbol(id, "ROUTE", uri, uri, signature, "RESOLVED", path, call);
             edge(contextId, id, null, "CONTAINS", "RESOLVED", path, call, "GROOVY");
             if (dynamicController || dynamicAction) {
