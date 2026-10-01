@@ -1,0 +1,12 @@
+<beans xmlns="http://www.springframework.org/schema/beans">
+  <import resource="wiring.xml"/>
+  <bean id="customerAction" class="demo.CustomerAction">
+    <property name="service" ref="customerService"/>
+  </bean>
+  <bean id="customerService" class="demo.CustomerServiceImpl">
+    <constructor-arg index="0" type="demo.CustomerDAO"><ref bean="customerDao"/></constructor-arg>
+  </bean>
+  <bean id="ambiguousService" class="demo.AmbiguousService" autowire="byType"/>
+  <bean id="missingClass" class="missing.LibraryService"/>
+  <bean id="secretHolder" class="demo.AmbiguousService"><property name="password" value="fixture-secret-must-not-escape"/></bean>
+</beans>

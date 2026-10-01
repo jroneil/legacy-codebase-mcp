@@ -29,6 +29,17 @@ public class SymbolController {
         bounds(limit, offset);
         return store.usages(stableId, limit, offset);
     }
+    // Configuration identities contain repository-relative paths; query parameters preserve slashes.
+    @GetMapping("/detail")
+    public SymbolStore.Detail detailQuery(@RequestParam String stableId, @RequestParam(defaultValue = "100") int limit,
+                                         @RequestParam(defaultValue = "0") int offset) {
+        return detail(stableId, limit, offset);
+    }
+    @GetMapping("/usages")
+    public SymbolStore.Usages usagesQuery(@RequestParam String stableId, @RequestParam(defaultValue = "100") int limit,
+                                         @RequestParam(defaultValue = "0") int offset) {
+        return usages(stableId, limit, offset);
+    }
     private void bounds(int limit, int offset) {
         if (limit < 1 || limit > 200 || offset < 0 || offset > 1_000_000) throw new InvalidQueryException();
     }

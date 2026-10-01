@@ -4,6 +4,7 @@ import static com.oneil.legacy.scan.ScanModel.*;
 import static org.assertj.core.api.Assertions.*;
 
 import com.oneil.legacy.PostgresTestSupport;
+import com.oneil.legacy.framework.FrameworkIndexer;
 import java.net.URI;
 import java.net.http.*;
 import java.nio.file.*;
@@ -57,9 +58,9 @@ class ScanIntegrationTests extends PostgresTestSupport {
     @Test
     void migrationAppliesAndValidatesWithoutHibernateSchemaCreation() {
         flyway.validate();
-        assertThat(flyway.info().current().getVersion().toString()).isEqualTo("2");
+        assertThat(flyway.info().current().getVersion().toString()).isEqualTo("4");
         assertThat(flyway.migrate().migrationsExecuted).isZero();
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM flyway_schema_history WHERE success", Integer.class)).isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM flyway_schema_history WHERE success", Integer.class)).isEqualTo(4);
         assertThat(store.list(100, 0).activeScanId()).isNull();
         assertThatThrownBy(() -> store.active(100, 0)).isInstanceOf(ScanStore.ScanNotFoundException.class);
     }
@@ -136,7 +137,7 @@ class ScanIntegrationTests extends PostgresTestSupport {
         var brokenInventory = new RepositoryInventory() {
             @Override public Inventory collect(Path path) { return new Inventory(List.of(file, file), List.of(), null); }
         };
-        var failure = new ScanService(store, brokenInventory, properties, new com.oneil.legacy.symbol.JavaSymbolIndexer()).scan();
+        var failure = new ScanService(store, brokenInventory, properties, new com.oneil.legacy.symbol.JavaSymbolIndexer(), new FrameworkIndexer(), new com.oneil.legacy.database.DatabaseIndexer()).scan();
         assertThat(failure.scan().status()).isEqualTo(Status.FAILED);
         assertThat(failure.files().items()).isEmpty();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM source_file WHERE scan_id=?", Integer.class, failure.scan().id())).isZero();

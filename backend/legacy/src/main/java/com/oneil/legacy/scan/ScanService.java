@@ -2,6 +2,8 @@ package com.oneil.legacy.scan;
 
 import java.util.ArrayList;
 import com.oneil.legacy.symbol.JavaSymbolIndexer;
+import com.oneil.legacy.framework.FrameworkIndexer;
+import com.oneil.legacy.database.DatabaseIndexer;
 import static com.oneil.legacy.scan.ScanModel.*;
 
 import java.io.IOException;
@@ -15,12 +17,16 @@ public class ScanService {
     private final RepositoryInventory inventory;
     private final ScanProperties properties;
     private final JavaSymbolIndexer indexer;
+    private final FrameworkIndexer frameworks;
+    private final DatabaseIndexer database;
 
-    public ScanService(ScanStore store, RepositoryInventory inventory, ScanProperties properties, JavaSymbolIndexer indexer) {
+    public ScanService(ScanStore store, RepositoryInventory inventory, ScanProperties properties, JavaSymbolIndexer indexer, FrameworkIndexer frameworks, DatabaseIndexer database) {
         this.store = store;
         this.inventory = inventory;
         this.properties = properties;
         this.indexer = indexer;
+        this.frameworks = frameworks;
+        this.database = database;
     }
 
     // Intentionally not transactional: each lifecycle step commits separately.
@@ -37,7 +43,7 @@ public class ScanService {
         store.start(id);
         try {
             var collected = inventory.collect(root);
-            var index = indexer.index(root, collected);
+            var index = database.index(root, collected, frameworks.index(root, collected, indexer.index(root, collected)));
             var errors = new ArrayList<>(collected.errors());
             errors.addAll(index.errors());
             store.complete(id, new Inventory(collected.files(), errors, collected.gitCommitSha(), index));

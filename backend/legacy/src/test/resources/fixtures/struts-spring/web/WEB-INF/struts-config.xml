@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<!DOCTYPE struts-config PUBLIC "-//Apache Software Foundation//DTD Struts Configuration 1.3//EN" "http://invalid.example/struts-config.dtd">
+<struts-config>
+  <form-beans><form-bean name="customerForm" type="demo.CustomerForm"/></form-beans>
+  <global-forwards><forward name="home" path="/WEB-INF/views/home.jsp"/></global-forwards>
+  <action-mappings>
+    <action path="/customer/search" type="demo.CustomerAction" name="customerForm" input="/WEB-INF/views/search.jsp">
+      <forward name="success" path="/WEB-INF/views/search.jsp"/>
+      <forward name="edit" path="/customer/edit.do?operation=search"/>
+    </action>
+    <action path="/customer/edit" type="demo.CustomerDispatchAction" parameter="operation"/>
+  </action-mappings>
+</struts-config>

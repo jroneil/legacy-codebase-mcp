@@ -1,0 +1,4 @@
+<beans xmlns="http://www.springframework.org/schema/beans">
+  <bean id="customerDao" class="demo.CustomerDAOImpl"/>
+  <bean id="alternativeDao" class="demo.AlternativeDAO"/>
+</beans>

@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<!DOCTYPE hibernate-mapping PUBLIC "-//Hibernate/Hibernate Mapping DTD 3.0//EN" "http://invalid.example/hibernate-mapping-3.0.dtd">
+<hibernate-mapping package="demo">
+  <class name="Customer" table="CUSTOMER"><id name="id" column="ID"/></class>
+  <query name="Customer.find"><![CDATA[from Customer c where c.id = :id]]></query>
+  <sql-query name="Customer.native"><![CDATA[SELECT * FROM CUSTOMER]]></sql-query>
+</hibernate-mapping>

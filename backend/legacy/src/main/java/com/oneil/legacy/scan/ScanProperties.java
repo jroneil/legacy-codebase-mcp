@@ -7,7 +7,7 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties("legacy.scan")
 public class ScanProperties {
     private String repositoryRoot = "";
-    private String analyzerVersion = "java-symbol-index-2";
+    private String analyzerVersion = "database-usage-index-4";
 
     public String getRepositoryRoot() { return repositoryRoot; }
     public void setRepositoryRoot(String repositoryRoot) { this.repositoryRoot = repositoryRoot; }

@@ -4,6 +4,7 @@ import static com.oneil.legacy.symbol.JavaIndexModel.*;
 import static org.assertj.core.api.Assertions.*;
 
 import com.oneil.legacy.PostgresTestSupport;
+import com.oneil.legacy.framework.FrameworkIndexer;
 import com.oneil.legacy.scan.*;
 import java.net.*;
 import java.net.http.*;
@@ -140,7 +141,7 @@ class SymbolIntegrationTests extends PostgresTestSupport {
         var failing = new JavaSymbolIndexer() {
             @Override public Index index(Path path, ScanModel.Inventory ignored) { return broken; }
         };
-        var result = new ScanService(scanStore, new RepositoryInventory(), properties, failing).scan();
+        var result = new ScanService(scanStore, new RepositoryInventory(), properties, failing, new FrameworkIndexer(), new com.oneil.legacy.database.DatabaseIndexer()).scan();
         assertThat(result.scan().status()).isEqualTo(ScanModel.Status.FAILED);
         assertThat(symbols.search("", 100, 0).freshness().scanId()).isEqualTo(first.scan().id());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM java_symbol WHERE scan_id=?", Integer.class, result.scan().id())).isZero();
@@ -179,7 +180,7 @@ class SymbolIntegrationTests extends PostgresTestSupport {
             jdbc.update("UPDATE scan SET status='COMPLETED', completed_at=now() WHERE id=?", id);
             jdbc.update("UPDATE active_scan SET scan_id=?", id);
         });
-        var flyway = Flyway.configure().dataSource(jdbc.getDataSource()).schemas(schema).defaultSchema(schema).load();
+        var flyway = Flyway.configure().dataSource(jdbc.getDataSource()).schemas(schema).defaultSchema(schema).target("2").load();
         assertThat(flyway.migrate().migrationsExecuted).isEqualTo(1);
         flyway.validate();
         assertThat(jdbc.queryForObject("SELECT scan_id FROM slice2_upgrade.active_scan", UUID.class)).isEqualTo(id);
