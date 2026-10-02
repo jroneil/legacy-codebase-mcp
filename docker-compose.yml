@@ -35,7 +35,7 @@ services:
       LEGACY_REPOSITORY_BASE: /workspace/repos
       ANALYZER_VERSION: ${ANALYZER_VERSION:-grails-index-5}
     volumes:
-      - "${LEGACY_REPOSITORY_BASE:-.}:/workspace/repos:ro"
+      - "${LEGACY_REPOSITORY_BASE:?Set LEGACY_REPOSITORY_BASE in .env}:/workspace/repos:ro"
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8080}:8080"
     depends_on:

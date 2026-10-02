@@ -98,13 +98,13 @@ class ScanIntegrationTests extends PostgresTestSupport {
     }
 
     @Test
-    void scansTwoSelectedRepositoriesAsDistinctImmutableSnapshots() throws Exception {
-        Path secondRoot = root.resolve("repo-b");
+    void scansTopLevelThenNestedRepositoryAsDistinctImmutableSnapshots() throws Exception {
+        Path secondRoot = root.resolve("legacy/repo-b");
         Files.createDirectories(secondRoot);
         Files.writeString(secondRoot.resolve("OnlyInB.java"), "class OnlyInB {}");
 
         var first = service.scan("repo-a");
-        var second = service.scan("repo-b");
+        var second = service.scan("legacy/repo-b");
 
         assertThat(first.scan().repositoryRoot()).isEqualTo(repositoryRoot.toString());
         assertThat(second.scan().repositoryRoot()).isEqualTo(secondRoot.toString());
@@ -275,10 +275,19 @@ class ScanIntegrationTests extends PostgresTestSupport {
         assertThat(before.statusCode()).isEqualTo(200);
         assertThat(json(before).path("activeScanId").isNull()).isTrue();
         var repositories = json(get("/api/repositories"));
+        assertThat(repositories.path("path").asText()).isEmpty();
+        assertThat(repositories.path("parent").isNull()).isTrue();
         assertThat(repositories.path("items").path(0).path("id").asText()).isEqualTo("repo-a");
         assertThat(repositories.path("items").path(1).path("id").asText()).isEqualTo("repo-b");
         assertThat(repositories.path("totalCount").asInt()).isEqualTo(2);
         assertThat(repositories.path("truncated").asBoolean()).isFalse();
+        Files.createDirectories(root.resolve("legacy/nested"));
+        var nestedRepositories = json(get("/api/repositories?path=legacy"));
+        assertThat(nestedRepositories.path("path").asText()).isEqualTo("legacy");
+        assertThat(nestedRepositories.path("parent").asText()).isEmpty();
+        assertThat(nestedRepositories.path("items").path(0).path("id").asText()).isEqualTo("legacy/nested");
+        assertThat(get("/api/repositories?path=legacy%2Fmissing").statusCode()).isEqualTo(400);
+        assertThat(get("/api/repositories?path=..").statusCode()).isEqualTo(400);
         var created = post("repo-a");
         assertThat(created.statusCode()).isEqualTo(201);
         String id = json(created).path("scan").path("id").asText();

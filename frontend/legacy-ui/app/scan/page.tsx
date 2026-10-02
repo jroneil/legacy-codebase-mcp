@@ -27,66 +27,90 @@ function freshnessOf(scan: { id: string; analyzerVersion: string | null; gitComm
 }
 
 export default async function ScanPage({ searchParams = Promise.resolve({}) }: Props = {}) {
-  const [params, repositories, list] = await Promise.all([searchParams, listRepositories(), listScans(20, 0)]);
-  const requestedRepository = valueOf(params.repository);
+  const params = await searchParams;
+  const requestedPath = valueOf(params.path);
+  const [repositories, list] = await Promise.all([listRepositories(requestedPath), listScans(20, 0)]);
   const scanId = valueOf(params.scanId);
   const status = valueOf(params.status);
   const actionError = valueOf(params.error);
   const activeId = list.ok ? list.data.activeScanId : null;
   const active = activeId ? await scanDetail(activeId, 1, 0) : null;
-  const selectedRepository =
-    repositories.ok && repositories.data.items.some((repository) => repository.id === requestedRepository)
-      ? requestedRepository
-      : repositories.ok
-        ? (repositories.data.items[0]?.id ?? "")
-        : "";
 
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-xl font-semibold">Scan status</h1>
 
-      <Panel title="Start a repository scan">
+      <Panel title="Browse repositories">
         {repositories.ok ? (
-          repositories.data.items.length === 0 ? (
-            <p className="text-sm text-zinc-500">
-              No repositories are available. Add a visible directory under the configured repository base and reload this page.
-            </p>
-          ) : (
-            <>
-              <form action={startScan} className="flex flex-wrap items-end gap-3">
-                <label className="flex min-w-64 flex-1 flex-col gap-1 text-sm">
-                  <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">Repository</span>
-                  <select
-                    name="repository"
-                    defaultValue={selectedRepository}
-                    className="rounded border border-black/15 bg-transparent px-3 py-2 dark:border-white/20"
-                  >
-                    {repositories.data.items.map((repository) => (
-                      <option key={repository.id} value={repository.id}>
-                        {repository.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+              <p>
+                <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">Current folder</span>{" "}
+                <Mono>{repositories.data.path || "/"}</Mono>
+              </p>
+              {repositories.data.parent !== null ? (
+                <Link
+                  className="rounded border border-black/15 px-3 py-1.5 font-medium hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+                  href={repositories.data.parent ? `/scan?path=${encodeURIComponent(repositories.data.parent)}` : "/scan"}
+                >
+                  Up
+                </Link>
+              ) : null}
+            </div>
+
+            <div className="mt-4">
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">Child folders</p>
+              {repositories.data.items.length === 0 ? (
+                <p className="text-sm text-zinc-500">This folder has no visible child directories.</p>
+              ) : (
+                <ul className="divide-y divide-black/5 rounded border border-black/10 dark:divide-white/10 dark:border-white/15">
+                  {repositories.data.items.map((repository) => (
+                    <li key={repository.id}>
+                      <Link
+                        className="flex items-center justify-between px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10"
+                        href={`/scan?path=${encodeURIComponent(repository.id)}`}
+                      >
+                        <span>{repository.name}</span>
+                        <span aria-hidden="true" className="text-zinc-400">›</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            {repositories.data.truncated ? (
+              <div className="mt-3">
+                <TruncatedNotice message={`Showing ${repositories.data.items.length} of ${repositories.data.totalCount} child folders.`} />
+              </div>
+            ) : null}
+
+            {repositories.data.path ? (
+              <form action={startScan} className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-black/10 pt-4 dark:border-white/15">
+                <p className="text-sm">
+                  Selected repository: <Mono>{repositories.data.path}</Mono>
+                </p>
+                <input type="hidden" name="repository" value={repositories.data.path} />
                 <button
                   type="submit"
                   className="rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
                 >
-                  Scan
+                  Scan this repository
                 </button>
               </form>
-              {repositories.data.truncated ? (
-                <div className="mt-3">
-                  <TruncatedNotice message={`Showing ${repositories.data.items.length} of ${repositories.data.totalCount} repositories.`} />
-                </div>
-              ) : null}
-            </>
-          )
+            ) : (
+              <p className="mt-4 border-t border-black/10 pt-4 text-sm text-zinc-500 dark:border-white/15">
+                Open a child folder to select a repository for scanning.
+              </p>
+            )}
+          </>
         ) : (
-          <ErrorNotice message={repositories.error} />
+          <div className="flex flex-col gap-3">
+            <ErrorNotice message={repositories.error} />
+            {requestedPath ? <Link className="text-sm underline" href="/scan">Return to repository root</Link> : null}
+          </div>
         )}
       </Panel>
-
       {actionError ? <ErrorNotice message={actionError} /> : null}
       {scanId && status === "COMPLETED" ? (
         <p role="status" className="rounded border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100">

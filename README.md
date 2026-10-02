@@ -36,24 +36,27 @@ recorded in the [validation records](docs/validation/) — including
 
 ## Quick start
 
-Requirements: Docker with Docker Compose, and a host directory containing one or more
-legacy repositories as immediate child directories.
+Requirements: Docker with Docker Compose, and a physical host directory containing one
+or more legacy repositories. Repositories may be nested below that directory.
 
 ```bash
 git clone <this-repository> legacy-codebase-mcp
 cd legacy-codebase-mcp
 cp .env.example .env
-# edit .env: set POSTGRES_PASSWORD and, if needed, LEGACY_REPOSITORY_BASE
+# edit .env: set both POSTGRES_PASSWORD and LEGACY_REPOSITORY_BASE
 docker compose up --build
 ```
 
-`LEGACY_REPOSITORY_BASE` defaults to this project directory. For a separate collection,
-set it to a physical host directory such as `/srv/legacy-repositories`, with a layout like:
+`LEGACY_REPOSITORY_BASE` has no fallback. Set it to a physical, non-symlink host
+directory such as `/srv/legacy-repositories`, with any useful nesting:
 
 ```text
 /srv/legacy-repositories/
-├── legacy-struts/
-└── legacy-grails/
+├── legacy/
+│   ├── legacy-struts/
+│   └── legacy-grails/
+└── other/
+    └── sample-app/
 ```
 
 The first build compiles the backend and frontend inside Docker, so it downloads Maven
@@ -76,11 +79,11 @@ All host ports bind to loopback only, and PostgreSQL is not published to the hos
 | Variable | Meaning |
 | --- | --- |
 | `POSTGRES_PASSWORD` | Any local password. It initializes a new PostgreSQL volume; changing it later does not change an existing volume. |
+| `LEGACY_REPOSITORY_BASE` | Absolute physical host directory that contains the repositories to browse. |
 
-`LEGACY_REPOSITORY_BASE=.` is optional and defaults to the Compose project directory.
-It is the host directory whose immediate, visible child directories appear in the scan
-selector. Compose mounts the base read-only at `/workspace/repos`; symlinked bases and
-repository entries are rejected by the backend.
+Compose mounts `LEGACY_REPOSITORY_BASE` read-only at `/workspace/repos`. The browser can
+descend through visible directories, while the backend rejects hidden components,
+symlinks, non-directories, missing paths, and paths outside the configured base.
 
 Other optional values, with defaults shown: `POSTGRES_DB=legacy`,
 `POSTGRES_USER=legacy`, `ANALYZER_VERSION=grails-index-5` (recorded with each snapshot as
@@ -90,14 +93,16 @@ never commit it.
 
 ## Create a scan
 
-Open http://127.0.0.1:3000/scan, select a discovered repository, and choose **Scan**.
-The page reports the result and retains scan history. The equivalent REST flow is:
+Open http://127.0.0.1:3000/scan, browse into the desired folder, and choose
+**Scan this repository**. Opening folders does not start a scan. The page reports the
+result and retains scan history. The equivalent REST flow is:
 
 ```bash
 curl -s http://127.0.0.1:8080/api/repositories
+curl -s --get http://127.0.0.1:8080/api/repositories --data-urlencode 'path=legacy'
 curl -s --max-time 0 -X POST http://127.0.0.1:8080/api/scans \
   -H 'Content-Type: application/json' \
-  -d '{"repository":"legacy-struts"}' | tee scan.json
+  -d '{"repository":"legacy/legacy-struts"}' | tee scan.json
 python3 -c "import json;s=json.load(open('scan.json'))['scan'];print(s['repositoryRoot'],s['status'],s['fileCount'],s['errorCount'])"
 ```
 
@@ -121,10 +126,10 @@ Point an MCP client at http://127.0.0.1:8080/mcp (see
 
 ## Add or select another repository
 
-Add another physical directory directly under `LEGACY_REPOSITORY_BASE`, then reload the
-scan page and select it. The backend container does not need to be recreated. If you
-change the base directory itself, update `.env` and recreate the backend so Docker can
-replace the bind mount:
+Add another physical directory anywhere under `LEGACY_REPOSITORY_BASE`, then reload the
+scan page, browse to it, and scan it. The backend container does not need to be
+recreated. If you change the base directory itself, update `.env` and recreate the
+backend so Docker can replace the bind mount:
 
 ```bash
 # edit LEGACY_REPOSITORY_BASE in .env
@@ -134,7 +139,8 @@ docker compose up -d --force-recreate backend
 Each successful scan creates a new immutable snapshot and becomes the one global active
 snapshot. Older completed scan metadata, inventories, symbols, relationships, and errors
 remain stored by scan ID. Each snapshot records its selected in-container root, for
-example `/workspace/repos/legacy-struts`, plus the repository Git SHA when available.
+example `/workspace/repos/legacy/legacy-struts`, plus the repository Git SHA when
+available.
 
 ## Stop, start, and reset
 
@@ -227,23 +233,26 @@ docker compose build
 
 ## Scan API
 
-`GET /api/repositories` returns at most 200 immediate, visible child directories of the
-configured repository base in deterministic name order, with `totalCount` and
-`truncated`. It never exposes arbitrary host paths. Hidden entries, files, and symlinks
-are omitted.
+`GET /api/repositories?path=` browses one directory level at a time. The empty path is
+the configured base; a relative path such as `legacy` returns that directory's immediate,
+visible child directories. Responses contain canonical `path`, `parent`, `items`,
+`totalCount`, and `truncated`, with at most 200 items in deterministic order. Item IDs
+are base-relative paths and may contain multiple components. Files, hidden entries, and
+symlinks are never returned.
 
-`POST /api/scans` synchronously inventories one repository selected by its discovered
-ID. The JSON request is `{"repository":"legacy-struts"}`. Absolute paths, nested paths,
-`..`, hidden names, missing entries, non-directories, symlinks, and roots that escape the
-configured base are rejected with 400 before a scan row is created. An unavailable or
-unsafe base returns 503. `ANALYZER_VERSION` defaults to `grails-index-5` and can be
+`POST /api/scans` synchronously inventories one repository selected by a discovered ID.
+The JSON request may be `{"repository":"legacy/legacy-struts"}`. Absolute paths, `..`,
+non-normalized paths, hidden components, missing entries, non-directories, symlinks at
+any component, and physical roots outside the configured base are rejected with 400
+before a scan row is created. An unavailable or unsafe base returns 503. `ANALYZER_VERSION` defaults to `grails-index-5` and can be
 overridden. Large repositories take minutes, so allow a long client timeout.
 
 ```bash
 curl 'http://127.0.0.1:8080/api/repositories'
+curl --get 'http://127.0.0.1:8080/api/repositories' --data-urlencode 'path=legacy'
 curl -i --max-time 0 -X POST http://127.0.0.1:8080/api/scans \
   -H 'Content-Type: application/json' \
-  -d '{"repository":"legacy-struts"}'
+  -d '{"repository":"legacy/legacy-struts"}'
 curl 'http://127.0.0.1:8080/api/scans?limit=20&offset=0'
 curl 'http://127.0.0.1:8080/api/scans/REPLACE_WITH_SCAN_UUID?limit=100&offset=0'
 ```
@@ -679,7 +688,7 @@ Google font loading needs network access during a fresh build. Routes:
 | `/entry-points`, `/entry-points/trace` | routes and their configuration traces |
 | `/trace` | component traversal with bounds, path state, evidence and truncation |
 | `/tables`, `/tables/[id]` | table impact (READ/WRITE/MAPPING, direct vs transitive) and table usages |
-| `/scan` | repository selector, scan trigger, result, active freshness and history |
+| `/scan` | bounded repository browser, explicit scan trigger, result, active freshness and history |
 | `/errors` | localized analysis errors for a scan |
 
 Pages render on demand (`force-dynamic`, uncached `fetch`), so a build does not need a
@@ -767,8 +776,9 @@ chain is returned by `/api/relationships/trace`.
 
 ## Validation and version control
 
-See [Slice 10 validation](docs/validation/SLICE_10_VALIDATION.md) (runtime repository
-selection), [Slice 9 validation](docs/validation/SLICE_09_VALIDATION.md)
+See [Slice 10.1 validation](docs/validation/SLICE_10_1_VALIDATION.md) (nested repository
+browser), [Slice 10 validation](docs/validation/SLICE_10_VALIDATION.md) (runtime
+repository selection), [Slice 9 validation](docs/validation/SLICE_09_VALIDATION.md)
 (containerized distribution),
 the [real-repository validation](docs/validation/REAL_REPOSITORY_VALIDATION.md)
 (accuracy against the real `weblegacy/struts1` codebase, including the defects it found),
@@ -782,6 +792,6 @@ the [real-repository validation](docs/validation/REAL_REPOSITORY_VALIDATION.md)
 [Slice 2 validation](docs/validation/SLICE_02_VALIDATION.md),
 [Slice 1 validation](docs/validation/SLICE_01_VALIDATION.md), and the earlier
 [Slice 0 record](docs/validation/SLICE_00_VALIDATION.md).
-Validation records identify the commit under test when available. Slice 10 remains
-uncommitted for review; Slice 9 and the real-repository validation fixes are committed
-in the current baseline. Root ignore rules exclude generated output, local credentials and `.env`.
+Validation records identify the commit under test when available. Slice 10 is committed
+in the current baseline; Slice 10.1 remains uncommitted for review. Root ignore rules
+exclude generated output, local credentials and `.env`.

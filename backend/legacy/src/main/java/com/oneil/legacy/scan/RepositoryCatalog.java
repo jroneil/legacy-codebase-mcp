@@ -13,26 +13,35 @@ import org.springframework.stereotype.Component;
 public class RepositoryCatalog {
     static final int MAX_RESULTS = 200;
     static final int MAX_IDENTIFIER_LENGTH = 1000;
+    static final int MAX_DEPTH = 32;
     private final ScanProperties properties;
 
     public RepositoryCatalog(ScanProperties properties) { this.properties = properties; }
 
-    public RepositoryList list() {
+    public RepositoryList list() { return list(""); }
+
+    public RepositoryList list(String requestedPath) {
         Path base = configuredBase();
+        Path relative = browserPath(requestedPath);
+        Path selected = relative == null ? base : base.resolve(relative).normalize();
+        String path = relative == null ? "" : canonical(relative);
+        verifySelected(base, selected, false);
+
         var retained = new PriorityQueue<RepositoryItem>(MAX_RESULTS,
                 Comparator.comparing(RepositoryItem::id).reversed());
         long count = 0;
-        try (var directory = RepositoryInventory.openRoot(base)) {
+        try (var directory = RepositoryInventory.openRoot(selected)) {
             for (Path entry : directory) {
                 Path name = entry.getFileName();
-                String id = name.toString();
-                if (!validComponent(id)) continue;
+                String childName = name.toString();
+                if (!validComponent(childName)) continue;
                 var view = directory.getFileAttributeView(name, BasicFileAttributeView.class,
                         LinkOption.NOFOLLOW_LINKS);
                 var attributes = view.readAttributes();
                 if (!attributes.isDirectory() || attributes.isSymbolicLink()) continue;
                 count++;
-                var item = new RepositoryItem(id, id);
+                String id = path.isEmpty() ? childName : path + "/" + childName;
+                var item = new RepositoryItem(id, childName);
                 if (retained.size() < MAX_RESULTS) retained.add(item);
                 else if (item.id().compareTo(retained.peek().id()) < 0) {
                     retained.poll();
@@ -40,22 +49,30 @@ public class RepositoryCatalog {
                 }
             }
         } catch (IOException | RuntimeException failure) {
-            throw new RepositoryConfigurationException();
+            throw new RepositorySelectionException();
         }
         var items = new ArrayList<>(retained);
         items.sort(Comparator.comparing(RepositoryItem::id));
-        return new RepositoryList(List.copyOf(items), count, count > items.size());
+        return new RepositoryList(path, parent(relative), List.copyOf(items), count, count > items.size());
     }
 
     public RepositorySelection resolve(String repository) {
-        Path relative = relative(repository);
+        Path relative = repositoryPath(repository);
         Path base = configuredBase();
         Path selected = base.resolve(relative).normalize();
-        if (!selected.startsWith(base)) throw new RepositorySelectionException();
+        verifySelected(base, selected, true);
+        return new RepositorySelection(canonical(relative), selected);
+    }
+
+    private void verifySelected(Path base, Path selected, boolean requireChild) {
+        if (!selected.startsWith(base) || (requireChild && selected.equals(base))) {
+            throw new RepositorySelectionException();
+        }
         try (var ignored = RepositoryInventory.openRoot(selected)) {
             Path physicalBase = base.toRealPath();
             Path physicalSelected = selected.toRealPath();
-            if (!physicalSelected.startsWith(physicalBase) || physicalSelected.equals(physicalBase)) {
+            if (!physicalSelected.startsWith(physicalBase)
+                    || (requireChild && physicalSelected.equals(physicalBase))) {
                 throw new RepositorySelectionException();
             }
         } catch (RepositorySelectionException failure) {
@@ -63,7 +80,6 @@ public class RepositoryCatalog {
         } catch (IOException | RuntimeException failure) {
             throw new RepositorySelectionException();
         }
-        return new RepositorySelection(canonical(relative), selected);
     }
 
     private Path configuredBase() {
@@ -84,16 +100,31 @@ public class RepositoryCatalog {
         }
     }
 
-    private Path relative(String repository) {
-        if (repository == null || repository.isBlank() || !repository.equals(repository.trim())
-                || repository.length() > MAX_IDENTIFIER_LENGTH || repository.indexOf('\\') >= 0) {
+    private Path browserPath(String value) {
+        if (value == null || value.isEmpty()) return null;
+        return validatedRelative(value);
+    }
+
+    private Path repositoryPath(String value) {
+        if (value == null || value.isBlank()) throw new RepositorySelectionException();
+        return validatedRelative(value);
+    }
+
+    private Path validatedRelative(String value) {
+        if (!value.equals(value.trim()) || value.length() > MAX_IDENTIFIER_LENGTH
+                || value.indexOf('\\') >= 0) {
             throw new RepositorySelectionException();
         }
         try {
-            Path relative = Path.of(repository);
-            if (relative.isAbsolute() || relative.getNameCount() != 1
-                    || !relative.normalize().equals(relative)) throw new RepositorySelectionException();
-            for (Path component : relative) if (!validComponent(component.toString())) throw new RepositorySelectionException();
+            Path relative = Path.of(value);
+            if (relative.isAbsolute() || relative.getNameCount() > MAX_DEPTH
+                    || !relative.normalize().equals(relative)) {
+                throw new RepositorySelectionException();
+            }
+            for (Path component : relative) {
+                if (!validComponent(component.toString())) throw new RepositorySelectionException();
+            }
+            if (!canonical(relative).equals(value)) throw new RepositorySelectionException();
             return relative;
         } catch (InvalidPathException failure) {
             throw new RepositorySelectionException();
@@ -102,6 +133,12 @@ public class RepositoryCatalog {
 
     private boolean validComponent(String value) {
         return !value.isBlank() && !value.equals(".") && !value.equals("..") && !value.startsWith(".");
+    }
+
+    private String parent(Path relative) {
+        if (relative == null) return null;
+        Path parent = relative.getParent();
+        return parent == null ? "" : canonical(parent);
     }
 
     private String canonical(Path relative) {

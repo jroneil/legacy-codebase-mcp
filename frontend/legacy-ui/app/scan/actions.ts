@@ -13,12 +13,12 @@ export async function startScan(formData: FormData): Promise<void> {
 
   const result = await createScan(repository);
   if (!result.ok) {
-    redirect(`/scan?repository=${encodeURIComponent(repository)}&error=${encodeURIComponent(result.error)}`);
+    redirect(`/scan?path=${encodeURIComponent(repository)}&error=${encodeURIComponent(result.error)}`);
   }
 
   revalidatePath("/scan");
   const scan = result.data.scan;
   redirect(
-    `/scan?repository=${encodeURIComponent(repository)}&scanId=${encodeURIComponent(scan.id)}&status=${encodeURIComponent(scan.status)}`,
+    `/scan?path=${encodeURIComponent(repository)}&scanId=${encodeURIComponent(scan.id)}&status=${encodeURIComponent(scan.status)}`,
   );
 }

@@ -265,26 +265,39 @@ describe("table impact pages", () => {
 describe("scan and error pages", () => {
   const id = "11111111-1111-1111-1111-111111111111";
 
-  it("renders the active scan status with freshness metadata", async () => {
+  it("renders repository-root children without a scan button", async () => {
     mock({
-      "/api/repositories": { items: [{ id: "legacy-struts", name: "legacy-struts" }], totalCount: 1, truncated: false },
+      "/api/repositories": {
+        path: "",
+        parent: null,
+        items: [
+          { id: "legacy", name: "legacy" },
+          { id: "other", name: "other" },
+        ],
+        totalCount: 2,
+        truncated: false,
+      },
       "/api/scans": { activeScanId: id, scans: page([scan()]) },
       ["/api/scans/" + id]: scanDetail(),
     });
     const html = renderToStaticMarkup(await ScanPage());
+    expect(html).toContain("Browse repositories");
+    expect(html).toContain('href="/scan?path=legacy"');
+    expect(html).toContain('href="/scan?path=other"');
+    expect(html).toContain("Open a child folder");
+    expect(html).not.toContain("Scan this repository");
     expect(html).toContain("COMPLETED");
-    expect(html).toContain("database-usage-index-4");
-    expect(html).toContain("42");
     expect(html).toContain("active");
-    expect(html).toContain(`/errors?scanId=${id}`);
   });
 
-  it("renders repository selection and completed scan feedback", async () => {
+  it("renders nested navigation, Up, and an explicit scan-current-folder form", async () => {
     mock({
       "/api/repositories": {
+        path: "legacy",
+        parent: "",
         items: [
-          { id: "legacy-struts", name: "legacy-struts" },
-          { id: "legacy-grails", name: "legacy-grails" },
+          { id: "legacy/grails-app", name: "grails-app" },
+          { id: "legacy/struts-app", name: "struts-app" },
         ],
         totalCount: 2,
         truncated: false,
@@ -292,37 +305,50 @@ describe("scan and error pages", () => {
       "/api/scans": { activeScanId: null, scans: page([]) },
     });
     const html = renderToStaticMarkup(
-      await ScanPage({ searchParams: params({ repository: "legacy-grails", scanId: id, status: "COMPLETED" }) }),
+      await ScanPage({ searchParams: params({ path: "legacy", scanId: id, status: "COMPLETED" }) }),
     );
-    expect(html).toContain("Start a repository scan");
-    expect(html).toContain("legacy-struts");
-    expect(html).toContain("legacy-grails");
-    expect(html).toContain(`<option value="legacy-grails" selected="">`);
-    expect(html).toContain("Scan");
+    expect(html).toContain("Current folder");
+    expect(html).toContain('href="/scan"');
+    expect(html).toContain(">Up<");
+    expect(html).toContain('href="/scan?path=legacy%2Fgrails-app"');
+    expect(html).toContain('name="repository" value="legacy"');
+    expect(html).toContain("Selected repository:");
+    expect(html).toContain("Scan this repository");
     expect(html).toContain("completed and is now active");
   });
 
-  it("handles empty repository discovery", async () => {
+  it("lets an empty nested folder remain the selected scan target", async () => {
     mock({
-      "/api/repositories": { items: [], totalCount: 0, truncated: false },
+      "/api/repositories": {
+        path: "other/sample-app",
+        parent: "other",
+        items: [],
+        totalCount: 0,
+        truncated: false,
+      },
       "/api/scans": { activeScanId: null, scans: page([]) },
     });
-    const html = renderToStaticMarkup(await ScanPage());
-    expect(html).toContain("No repositories are available");
-    expect(html).not.toContain("type=\"submit\"");
+    const html = renderToStaticMarkup(await ScanPage({ searchParams: params({ path: "other/sample-app" }) }));
+    expect(html).toContain("This folder has no visible child directories.");
+    expect(html).toContain('href="/scan?path=other"');
+    expect(html).toContain('name="repository" value="other/sample-app"');
+    expect(html).toContain("Scan this repository");
   });
 
-  it("shows repository discovery and scan-action errors", async () => {
+  it("shows stale-path recovery, backend discovery errors, and scan-action errors", async () => {
     mock(
       {
-        "/api/repositories": { error: "Repository base is unavailable." },
+        "/api/repositories": { error: "Invalid repository path." },
         "/api/scans": { activeScanId: null, scans: page([]) },
       },
-      { "/api/repositories": 503 },
+      { "/api/repositories": 400 },
     );
-    const html = renderToStaticMarkup(await ScanPage({ searchParams: params({ error: "Invalid repository selection." }) }));
-    expect(html).toContain("Repository base is unavailable.");
-    expect(html).toContain("Invalid repository selection.");
+    const html = renderToStaticMarkup(
+      await ScanPage({ searchParams: params({ path: "removed/repository", error: "Scan request failed." }) }),
+    );
+    expect(html).toContain("Invalid request: Invalid repository path.");
+    expect(html).toContain("Return to repository root");
+    expect(html).toContain("Scan request failed.");
   });
 
   it("renders analysis errors with file, stage, state and message", async () => {
