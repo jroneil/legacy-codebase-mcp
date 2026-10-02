@@ -40,11 +40,11 @@ class FrameworkIntegrationTests extends PostgresTestSupport {
         jdbc.execute("TRUNCATE java_relationship, java_symbol, source_file, analysis_error, active_scan, scan");
         jdbc.update("INSERT INTO active_scan(singleton) VALUES (true)");
         copyFixture(root);
-        properties.setRepositoryBase(root.getParent().toString());
+        configureRepository(root);
         properties.setAnalyzerVersion("struts-spring-index-3-test");
     }
     @Test void restEntryPointsAndTraceReturnWiringEvidenceAndFreshness() throws Exception {
-        var scan = scans.scan(root.getFileName().toString());
+        var scan = scans.scan();
         assertThat(scan.scan().status()).isEqualTo(ScanModel.Status.COMPLETED);
         assertThat(scan.errors().items()).anyMatch(e -> e.code().equals("XML_PARSE"));
         var entryResponse = get("/api/entry-points?path=" + encode("/customer/search"));
@@ -83,7 +83,7 @@ class FrameworkIntegrationTests extends PostgresTestSupport {
     @Test void ambiguousRoutesReturnCandidatesAndWiringDoesNotChooseOne() throws Exception {
         Files.writeString(root.resolve("web/WEB-INF/struts-config-other.xml"), "<struts-config><action-mappings><action path='/customer/search' type='demo.CustomerAction'/></action-mappings></struts-config>");
         Files.writeString(root.resolve("applicationContext-other.xml"), "<beans><bean id='anotherAction' class='demo.CustomerAction'/></beans>");
-        assertThat(scans.scan(root.getFileName().toString()).scan().status()).isEqualTo(ScanModel.Status.COMPLETED);
+        assertThat(scans.scan().scan().status()).isEqualTo(ScanModel.Status.COMPLETED);
         assertThat(queries.entries("/customer/search", 100, 0).candidates().items()).hasSize(2);
         assertThat(queries.trace(ROUTE, 8, 100).paths()).allSatisfy(path -> {
             assertThat(path.resolutionState()).isEqualTo("UNRESOLVED");
@@ -93,29 +93,29 @@ class FrameworkIntegrationTests extends PostgresTestSupport {
     }
     @Test void beanCyclesAndAmbiguousInjectionsTerminateWithoutInventingPaths() throws Exception {
         Files.writeString(root.resolve("web/WEB-INF/wiring.xml"), "<beans><bean id='customerDao' class='demo.CustomerDAOImpl'><property name='back' ref='customerService'/></bean></beans>");
-        scans.scan(root.getFileName().toString());
+        scans.scan();
         assertThat(queries.trace(ROUTE, 8, 100).paths()).singleElement().satisfies(p -> assertThat(p.termination()).isEqualTo("CYCLE"));
         Files.writeString(root.resolve("web/WEB-INF/wiring.xml"), "<beans><bean id='customerDao' class='demo.CustomerDAOImpl'/><bean id='customerDao' class='demo.AlternativeDAO'/></beans>");
-        scans.scan(root.getFileName().toString());
+        scans.scan();
         assertThat(queries.trace(ROUTE, 8, 100).paths()).singleElement().satisfies(p -> {
             assertThat(p.resolutionState()).isEqualTo("UNRESOLVED");
             assertThat(p.components()).doesNotContain("java:type:demo.CustomerDAOImpl", "java:type:demo.AlternativeDAO");
         });
     }
     @Test void repeatScansAreStableDeletedMappingsDisappearAndRowsAreImmutable() throws Exception {
-        var first = scans.scan(root.getFileName().toString());
+        var first = scans.scan();
         var initial = queries.trace(ROUTE, 8, 100).paths();
-        assertThat(scans.scan(root.getFileName().toString()).scan().status()).isEqualTo(ScanModel.Status.COMPLETED);
+        assertThat(scans.scan().scan().status()).isEqualTo(ScanModel.Status.COMPLETED);
         assertThat(queries.trace(ROUTE, 8, 100).paths()).isEqualTo(initial);
         assertThatThrownBy(() -> jdbc.update("UPDATE java_symbol SET simple_name='changed' WHERE scan_id=? AND kind='ROUTE'", first.scan().id())).isInstanceOf(DataAccessException.class);
         assertThatThrownBy(() -> jdbc.update("DELETE FROM java_relationship WHERE scan_id=? AND evidence_type='XML'", first.scan().id())).isInstanceOf(DataAccessException.class);
         Files.delete(root.resolve(CONFIG));
-        assertThat(scans.scan(root.getFileName().toString()).scan().status()).isEqualTo(ScanModel.Status.COMPLETED);
+        assertThat(scans.scan().scan().status()).isEqualTo(ScanModel.Status.COMPLETED);
         assertThat(queries.entries("", 100, 0).candidates().items()).isEmpty();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM java_symbol WHERE scan_id=? AND kind='ROUTE'", Integer.class, first.scan().id())).isEqualTo(2);
     }
     @Test void uncommittedFrameworkPublicationNeverLeaksToReaders() throws Exception {
-        var first = scans.scan(root.getFileName().toString());
+        var first = scans.scan();
         String xml = Files.readString(root.resolve(CONFIG)).replace("/customer/search", "/customer/new");
         Files.writeString(root.resolve(CONFIG), xml);
         var inventory = inventory();
@@ -137,7 +137,7 @@ class FrameworkIntegrationTests extends PostgresTestSupport {
         assertThat(queries.entries("/customer/new", 100, 0).candidates().items()).hasSize(1);
     }
     @Test void failedFrameworkPersistenceRollsBackAndPreservesPreviousActiveScan() {
-        var first = scans.scan(root.getFileName().toString());
+        var first = scans.scan();
         var failing = new FrameworkIndexer() {
             @Override public Index index(Path path, ScanModel.Inventory inventory, Index javaIndex) {
                 var good = super.index(path, inventory, javaIndex);
@@ -146,7 +146,7 @@ class FrameworkIntegrationTests extends PostgresTestSupport {
                 return new Index(good.symbols(), broken, good.errors());
             }
         };
-        var failure = new ScanService(scanStore, new RepositoryInventory(), properties, new RepositoryCatalog(properties), new JavaSymbolIndexer(), new com.oneil.legacy.grails.GrailsIndexer(), failing, new com.oneil.legacy.database.DatabaseIndexer()).scan(root.getFileName().toString());
+        var failure = new ScanService(scanStore, new RepositoryInventory(), properties, new MountedRepositoryService(properties), new JavaSymbolIndexer(), new com.oneil.legacy.grails.GrailsIndexer(), failing, new com.oneil.legacy.database.DatabaseIndexer()).scan();
         assertThat(failure.scan().status()).isEqualTo(ScanModel.Status.FAILED);
         assertThat(queries.trace(ROUTE, 8, 100).freshness().scanId()).isEqualTo(first.scan().id());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM java_symbol WHERE scan_id=?", Integer.class, failure.scan().id())).isZero();

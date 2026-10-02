@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { startScan } from "./actions";
 import { FreshnessPanel } from "@/components/Freshness";
-import { ErrorNotice, Mono, Panel, StateBadge, TruncatedNotice } from "@/components/ui";
-import { encodeId, listRepositories, listScans, scanDetail, type Freshness } from "@/lib/api";
+import { ErrorNotice, Mono, Panel, StateBadge } from "@/components/ui";
+import { encodeId, listScans, mountedRepository, scanDetail, type Freshness } from "@/lib/api";
 import { formatCount, formatTimestamp } from "@/lib/view";
 
 export const dynamic = "force-dynamic";
@@ -28,8 +28,7 @@ function freshnessOf(scan: { id: string; analyzerVersion: string | null; gitComm
 
 export default async function ScanPage({ searchParams = Promise.resolve({}) }: Props = {}) {
   const params = await searchParams;
-  const requestedPath = valueOf(params.path);
-  const [repositories, list] = await Promise.all([listRepositories(requestedPath), listScans(20, 0)]);
+  const [repository, list] = await Promise.all([mountedRepository(), listScans(20, 0)]);
   const scanId = valueOf(params.scanId);
   const status = valueOf(params.status);
   const actionError = valueOf(params.error);
@@ -40,75 +39,25 @@ export default async function ScanPage({ searchParams = Promise.resolve({}) }: P
     <div className="flex flex-col gap-4">
       <h1 className="text-xl font-semibold">Scan status</h1>
 
-      <Panel title="Browse repositories">
-        {repositories.ok ? (
-          <>
-            <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
-              <p>
-                <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">Current folder</span>{" "}
-                <Mono>{repositories.data.path || "/"}</Mono>
-              </p>
-              {repositories.data.parent !== null ? (
-                <Link
-                  className="rounded border border-black/15 px-3 py-1.5 font-medium hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
-                  href={repositories.data.parent ? `/scan?path=${encodeURIComponent(repositories.data.parent)}` : "/scan"}
-                >
-                  Up
-                </Link>
-              ) : null}
+      <Panel title="Repository">
+        {repository.ok ? (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="text-sm">
+              <p className="font-medium">{repository.data.name}</p>
+              <p className="mt-1 text-xs text-zinc-500">Status: {repository.data.status.toLowerCase()}</p>
+              <p className="mt-1 text-xs text-zinc-500">Mounted read-only by the local launcher.</p>
             </div>
-
-            <div className="mt-4">
-              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">Child folders</p>
-              {repositories.data.items.length === 0 ? (
-                <p className="text-sm text-zinc-500">This folder has no visible child directories.</p>
-              ) : (
-                <ul className="divide-y divide-black/5 rounded border border-black/10 dark:divide-white/10 dark:border-white/15">
-                  {repositories.data.items.map((repository) => (
-                    <li key={repository.id}>
-                      <Link
-                        className="flex items-center justify-between px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10"
-                        href={`/scan?path=${encodeURIComponent(repository.id)}`}
-                      >
-                        <span>{repository.name}</span>
-                        <span aria-hidden="true" className="text-zinc-400">›</span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            {repositories.data.truncated ? (
-              <div className="mt-3">
-                <TruncatedNotice message={`Showing ${repositories.data.items.length} of ${repositories.data.totalCount} child folders.`} />
-              </div>
-            ) : null}
-
-            {repositories.data.path ? (
-              <form action={startScan} className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-black/10 pt-4 dark:border-white/15">
-                <p className="text-sm">
-                  Selected repository: <Mono>{repositories.data.path}</Mono>
-                </p>
-                <input type="hidden" name="repository" value={repositories.data.path} />
-                <button
-                  type="submit"
-                  className="rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
-                >
-                  Scan this repository
-                </button>
-              </form>
-            ) : (
-              <p className="mt-4 border-t border-black/10 pt-4 text-sm text-zinc-500 dark:border-white/15">
-                Open a child folder to select a repository for scanning.
-              </p>
-            )}
-          </>
-        ) : (
-          <div className="flex flex-col gap-3">
-            <ErrorNotice message={repositories.error} />
-            {requestedPath ? <Link className="text-sm underline" href="/scan">Return to repository root</Link> : null}
+            <form action={startScan}>
+              <button
+                type="submit"
+                className="rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
+              >
+                Scan repository
+              </button>
+            </form>
           </div>
+        ) : (
+          <ErrorNotice message={repository.error} />
         )}
       </Panel>
       {actionError ? <ErrorNotice message={actionError} /> : null}

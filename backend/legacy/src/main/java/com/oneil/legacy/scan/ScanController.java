@@ -17,8 +17,8 @@ public class ScanController {
     public ScanController(ScanService service, ScanStore store) { this.service = service; this.store = store; }
 
     @PostMapping
-    public ResponseEntity<ScanDetail> create(@RequestBody ScanRequest request) {
-        ScanDetail result = service.scan(request == null ? null : request.repository());
+    public ResponseEntity<ScanDetail> create() {
+        ScanDetail result = service.scan();
         return ResponseEntity.created(URI.create("/api/scans/" + result.scan().id())).body(result);
     }
 
@@ -46,13 +46,10 @@ public class ScanController {
     ResponseEntity<Map<String, String>> configuration() {
         return ResponseEntity.status(503).body(Map.of("error", "Configure a nonempty ANALYZER_VERSION (maximum 200 characters)."));
     }
-    @ExceptionHandler(RepositoryCatalog.RepositoryConfigurationException.class)
+    @ExceptionHandler(MountedRepositoryService.RepositoryConfigurationException.class)
     ResponseEntity<Map<String, String>> repositoryConfiguration() {
-        return ResponseEntity.status(503).body(Map.of("error", "Configure a readable, secure LEGACY_REPOSITORY_BASE directory."));
-    }
-    @ExceptionHandler(RepositoryCatalog.RepositorySelectionException.class)
-    ResponseEntity<Map<String, String>> repositorySelection() {
-        return ResponseEntity.badRequest().body(Map.of("error", "Repository selection is invalid or unavailable."));
+        return ResponseEntity.status(503).body(Map.of(
+                "error", "No readable repository is mounted. Run the local launcher and retry."));
     }
     @ExceptionHandler(InvalidPageException.class)
     ResponseEntity<Map<String, String>> invalidPage() {

@@ -1,9 +1,7 @@
 name: legacy-codebase-mcp
 
-# Default path: docker compose up --build
-#   cp .env.example .env, set LEGACY_REPOSITORY_BASE and POSTGRES_PASSWORD, then start.
-# Only PostgreSQL, the backend and the frontend run here. The repository base is
-# mounted read-only; no target build or target code is executed.
+# Local product path: cp .env.example .env, set POSTGRES_PASSWORD, then run
+# ./run-local.sh [repository]. The launcher supplies one physical host directory.
 
 services:
   postgres:
@@ -19,23 +17,27 @@ services:
       interval: 5s
       timeout: 5s
       retries: 12
-    # Not published to the host. For host-based backend development use
-    # docker-compose.dev.yml, which adds a loopback-only port mapping.
+    # PostgreSQL is internal-only. docker-compose.dev.yml adds a loopback port
+    # solely for a backend process running natively on the host.
     restart: unless-stopped
 
   backend:
     build:
       context: ./backend/legacy
     environment:
-      # Container-internal database hostname; no host PostgreSQL port is needed.
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-legacy}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-legacy}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
-      # Fixed namespace inside the container; the host repository base is mounted there read-only.
-      LEGACY_REPOSITORY_BASE: /workspace/repos
+      # The backend knows only the fixed container path and a safe display name.
+      LEGACY_REPOSITORY_ROOT: /workspace/target
+      LEGACY_REPOSITORY_NAME: ${LEGACY_REPOSITORY_NAME:-Repository not selected}
+      LEGACY_REPOSITORY_CONFIGURED: ${LEGACY_REPOSITORY_CONFIGURED:-false}
       ANALYZER_VERSION: ${ANALYZER_VERSION:-grails-index-5}
     volumes:
-      - "${LEGACY_REPOSITORY_BASE:?Set LEGACY_REPOSITORY_BASE in .env}:/workspace/repos:ro"
+      - type: bind
+        source: ${LEGACY_REPOSITORY_ROOT:-./.local-repository-unselected}
+        target: /workspace/target
+        read_only: true
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8080}:8080"
     depends_on:
@@ -47,7 +49,6 @@ services:
     build:
       context: ./frontend/legacy-ui
     environment:
-      # Server-side backend URL resolved on the Compose network, never in the browser.
       LEGACY_API_BASE_URL: http://backend:8080
     ports:
       - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"

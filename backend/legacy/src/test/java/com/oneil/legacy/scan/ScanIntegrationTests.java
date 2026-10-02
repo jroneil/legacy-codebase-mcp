@@ -54,7 +54,7 @@ class ScanIntegrationTests extends PostgresTestSupport {
                 else Files.copy(path, destination);
             }
         }
-        properties.setRepositoryBase(root.toString());
+        configureRepository(repositoryRoot);
         properties.setAnalyzerVersion("fixture-analyzer-1");
     }
 
@@ -70,8 +70,8 @@ class ScanIntegrationTests extends PostgresTestSupport {
 
     @Test
     void completesRepeatedSnapshotsWithoutDuplicatesAndRemovesDeletedFiles() throws Exception {
-        ScanDetail first = service.scan("repo-a");
-        ScanDetail second = service.scan("repo-a");
+        ScanDetail first = service.scan();
+        ScanDetail second = service.scan();
         assertThat(first.scan().status()).isEqualTo(Status.COMPLETED);
         assertThat(second.scan().id()).isNotEqualTo(first.scan().id());
         assertThat(second.files().items()).isEqualTo(first.files().items()).hasSize(3);
@@ -81,7 +81,7 @@ class ScanIntegrationTests extends PostgresTestSupport {
         assertThat(second.active()).isTrue();
         assertThat(store.detail(first.scan().id(), 100, 0).active()).isFalse();
         Files.delete(repositoryRoot.resolve("src/Example.java"));
-        ScanDetail third = service.scan("repo-a");
+        ScanDetail third = service.scan();
         assertThat(store.active(100, 0).scan().id()).isEqualTo(third.scan().id());
         assertThat(third.files().items()).extracting(SourceFile::relativePath).containsExactly("broken.xml", "config/application.properties");
         assertThat(store.detail(first.scan().id(), 100, 0).files().items()).hasSize(3);
@@ -89,10 +89,11 @@ class ScanIntegrationTests extends PostgresTestSupport {
     }
 
     @Test
-    void invalidRepositoryIsRejectedBeforeCreatingAScan() {
-        ScanDetail good = service.scan("repo-a");
-        assertThatThrownBy(() -> service.scan("missing"))
-                .isInstanceOf(RepositoryCatalog.RepositorySelectionException.class);
+    void unavailableMountedRepositoryIsRejectedBeforeCreatingAScan() {
+        ScanDetail good = service.scan();
+        properties.setRepositoryConfigured(false);
+        assertThatThrownBy(service::scan)
+                .isInstanceOf(MountedRepositoryService.RepositoryConfigurationException.class);
         assertThat(store.list(100, 0).scans().totalCount()).isEqualTo(1);
         assertThat(store.active(100, 0).scan().id()).isEqualTo(good.scan().id());
     }
@@ -103,11 +104,12 @@ class ScanIntegrationTests extends PostgresTestSupport {
         Files.createDirectories(secondRoot);
         Files.writeString(secondRoot.resolve("OnlyInB.java"), "class OnlyInB {}");
 
-        var first = service.scan("repo-a");
-        var second = service.scan("legacy/repo-b");
+        var first = service.scan();
+        configureRepository(secondRoot);
+        var second = service.scan();
 
-        assertThat(first.scan().repositoryRoot()).isEqualTo(repositoryRoot.toString());
-        assertThat(second.scan().repositoryRoot()).isEqualTo(secondRoot.toString());
+        assertThat(first.scan().repositoryRoot()).isEqualTo("mounted:repo-a");
+        assertThat(second.scan().repositoryRoot()).isEqualTo("mounted:repo-b");
         assertThat(first.scan().id()).isNotEqualTo(second.scan().id());
         assertThat(second.files().items()).extracting(SourceFile::relativePath).containsExactly("OnlyInB.java");
         assertThat(store.detail(first.scan().id(), 100, 0).files().items()).hasSize(3);
@@ -117,7 +119,7 @@ class ScanIntegrationTests extends PostgresTestSupport {
     @Test
     void fileErrorsAndHashesArePersistedWithoutFailingTheSnapshot() throws Exception {
         Files.write(repositoryRoot.resolve("invalid.properties"), new byte[] {(byte) 0xc3, 0x28});
-        var result = service.scan("repo-a");
+        var result = service.scan();
         assertThat(result.scan().status()).isEqualTo(Status.COMPLETED);
         assertThat(result.scan().fileCount()).isEqualTo(4);
         assertThat(result.scan().errorCount()).isEqualTo(1);
@@ -134,7 +136,7 @@ class ScanIntegrationTests extends PostgresTestSupport {
         Files.writeString(unreadable, "private source");
         Files.setPosixFilePermissions(unreadable, java.util.Set.of());
         try {
-            var result = service.scan("repo-a");
+            var result = service.scan();
             assertThat(result.scan().status()).isEqualTo(Status.COMPLETED);
             assertThat(result.scan().fileCount()).isEqualTo(3);
             assertThat(result.errors().items()).singleElement().satisfies(error -> {
@@ -148,13 +150,14 @@ class ScanIntegrationTests extends PostgresTestSupport {
 
     @Test
     void persistenceFailureRollsBackEntireInventoryAndPreservesActive() {
-        var first = service.scan("repo-a");
+        var first = service.scan();
         assertThatCode(() -> Files.createDirectory(root.resolve("repo-b"))).doesNotThrowAnyException();
         var file = first.files().items().getFirst();
         var brokenInventory = new RepositoryInventory() {
             @Override public Inventory collect(Path path) { return new Inventory(List.of(file, file), List.of(), null); }
         };
-        var failure = new ScanService(store, brokenInventory, properties, new RepositoryCatalog(properties), new com.oneil.legacy.symbol.JavaSymbolIndexer(), new com.oneil.legacy.grails.GrailsIndexer(), new FrameworkIndexer(), new com.oneil.legacy.database.DatabaseIndexer()).scan("repo-b");
+        configureRepository(root.resolve("repo-b"));
+        var failure = new ScanService(store, brokenInventory, properties, new MountedRepositoryService(properties), new com.oneil.legacy.symbol.JavaSymbolIndexer(), new com.oneil.legacy.grails.GrailsIndexer(), new FrameworkIndexer(), new com.oneil.legacy.database.DatabaseIndexer()).scan();
         assertThat(failure.scan().status()).isEqualTo(Status.FAILED);
         assertThat(failure.files().items()).isEmpty();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM source_file WHERE scan_id=?", Integer.class, failure.scan().id())).isZero();
@@ -179,7 +182,7 @@ class ScanIntegrationTests extends PostgresTestSupport {
 
     @Test
     void readersSeeOldSnapshotUntilPublicationCommits() throws Exception {
-        var old = service.scan("repo-a");
+        var old = service.scan();
         UUID id = store.create(repositoryRoot.toString(), "replacement");
         store.start(id);
         var collected = new RepositoryInventory().collect(repositoryRoot);
@@ -244,7 +247,7 @@ class ScanIntegrationTests extends PostgresTestSupport {
         assertThatThrownBy(() -> jdbc.update("UPDATE active_scan SET scan_id=?", pending)).isInstanceOf(DataAccessException.class);
         assertThatThrownBy(() -> jdbc.update("UPDATE scan SET status='COMPLETED', started_at=now(), completed_at=now() WHERE id=?", pending))
                 .isInstanceOf(DataAccessException.class);
-        var completed = service.scan("repo-a");
+        var completed = service.scan();
         UUID id = completed.scan().id();
         assertThatThrownBy(() -> jdbc.update("UPDATE scan SET analyzer_version='changed' WHERE id=?", id)).isInstanceOf(DataAccessException.class);
         assertThatThrownBy(() -> jdbc.update("DELETE FROM scan WHERE id=?", id)).isInstanceOf(DataAccessException.class);
@@ -261,54 +264,53 @@ class ScanIntegrationTests extends PostgresTestSupport {
         git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "fixture");
         String sha = git("rev-parse", "HEAD").trim();
         assertThat(git("status", "--porcelain")).isEmpty();
-        var scan = service.scan("repo-a");
+        var scan = service.scan();
         assertThat(scan.scan().gitCommitSha()).isEqualTo(sha);
         assertThat(git("status", "--porcelain")).isEmpty();
         assertThat(scan.files().items()).noneMatch(file -> file.relativePath().startsWith(".git/"));
     }
 
     @Test
-    void restEndpointsExposeBoundedInventoryMetadataAndUsefulErrors() throws Exception {
-        Files.createDirectories(root.resolve("repo-b"));
-        Files.createDirectories(root.resolve(".hidden"));
+    void restEndpointsScanMountedRepositoriesAndPreserveHistoryAcrossSwitches() throws Exception {
         var before = get("/api/scans");
         assertThat(before.statusCode()).isEqualTo(200);
         assertThat(json(before).path("activeScanId").isNull()).isTrue();
-        var repositories = json(get("/api/repositories"));
-        assertThat(repositories.path("path").asText()).isEmpty();
-        assertThat(repositories.path("parent").isNull()).isTrue();
-        assertThat(repositories.path("items").path(0).path("id").asText()).isEqualTo("repo-a");
-        assertThat(repositories.path("items").path(1).path("id").asText()).isEqualTo("repo-b");
-        assertThat(repositories.path("totalCount").asInt()).isEqualTo(2);
-        assertThat(repositories.path("truncated").asBoolean()).isFalse();
-        Files.createDirectories(root.resolve("legacy/nested"));
-        var nestedRepositories = json(get("/api/repositories?path=legacy"));
-        assertThat(nestedRepositories.path("path").asText()).isEqualTo("legacy");
-        assertThat(nestedRepositories.path("parent").asText()).isEmpty();
-        assertThat(nestedRepositories.path("items").path(0).path("id").asText()).isEqualTo("legacy/nested");
-        assertThat(get("/api/repositories?path=legacy%2Fmissing").statusCode()).isEqualTo(400);
-        assertThat(get("/api/repositories?path=..").statusCode()).isEqualTo(400);
-        var created = post("repo-a");
-        assertThat(created.statusCode()).isEqualTo(201);
-        String id = json(created).path("scan").path("id").asText();
-        assertThat(created.headers().firstValue("Location")).contains("/api/scans/" + id);
-        var detail = json(get("/api/scans/" + id + "?limit=1"));
+
+        var metadataA = json(get("/api/repository"));
+        assertThat(metadataA.path("name").asText()).isEqualTo("repo-a");
+        assertThat(metadataA.path("status").asText()).isEqualTo("READY");
+        var createdA = post();
+        assertThat(createdA.statusCode()).isEqualTo(201);
+        String scanA = json(createdA).path("scan").path("id").asText();
+        assertThat(json(createdA).path("scan").path("repositoryRoot").asText()).isEqualTo("mounted:repo-a");
+        assertThat(createdA.headers().firstValue("Location")).contains("/api/scans/" + scanA);
+        var detail = json(get("/api/scans/" + scanA + "?limit=1"));
         assertThat(detail.path("files").path("items").size()).isEqualTo(1);
         assertThat(detail.path("files").path("totalCount").asInt()).isEqualTo(3);
         assertThat(detail.path("files").path("truncated").asBoolean()).isTrue();
-        assertThat(json(get("/api/scans/" + id + "?limit=1&offset=2")).path("files").path("truncated").asBoolean()).isFalse();
-        assertThat(json(get("/api/scans")).path("activeScanId").asText()).isEqualTo(id);
+
+        Path repositoryB = root.resolve("repo-b");
+        Files.createDirectories(repositoryB.resolve("src"));
+        Files.writeString(repositoryB.resolve("src/OnlyInB.java"), "class OnlyInB {}");
+        configureRepository(repositoryB);
+        assertThat(json(get("/api/repository")).path("name").asText()).isEqualTo("repo-b");
+        var createdB = post();
+        assertThat(createdB.statusCode()).isEqualTo(201);
+        String scanB = json(createdB).path("scan").path("id").asText();
+        assertThat(json(createdB).path("scan").path("repositoryRoot").asText()).isEqualTo("mounted:repo-b");
+        assertThat(json(get("/api/scans")).path("activeScanId").asText()).isEqualTo(scanB);
+        assertThat(json(get("/api/scans")).path("scans").path("totalCount").asInt()).isEqualTo(2);
+        assertThat(json(get("/api/scans/" + scanA)).path("files").path("totalCount").asInt()).isEqualTo(3);
+
         assertThat(get("/api/scans/" + UUID.randomUUID()).statusCode()).isEqualTo(404);
         assertThat(get("/api/scans/not-a-uuid").statusCode()).isEqualTo(400);
         assertThat(get("/api/scans?limit=201").statusCode()).isEqualTo(400);
         assertThat(get("/api/scans?offset=-1").statusCode()).isEqualTo(400);
-        assertThat(post("../repo-a").statusCode()).isEqualTo(400);
-        assertThat(post(repositoryRoot.toString()).statusCode()).isEqualTo(400);
-        assertThat(post("missing").statusCode()).isEqualTo(400);
-        properties.setRepositoryBase("");
-        assertThat(post("repo-a").statusCode()).isEqualTo(503);
-        assertThat(get("/api/repositories").statusCode()).isEqualTo(503);
-        assertThat(store.list(100, 0).scans().totalCount()).isEqualTo(1);
+        properties.setRepositoryConfigured(false);
+        assertThat(post().statusCode()).isEqualTo(503);
+        assertThat(get("/api/repository").statusCode()).isEqualTo(503);
+        assertThat(store.list(100, 0).scans().totalCount()).isEqualTo(2);
+        assertThat(store.active(100, 0).scan().id().toString()).isEqualTo(scanB);
     }
 
     private static void await(CountDownLatch latch) {
@@ -319,11 +321,9 @@ class ScanIntegrationTests extends PostgresTestSupport {
     private HttpResponse<String> get(String path) throws Exception {
         return http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + path)).GET().build(), HttpResponse.BodyHandlers.ofString());
     }
-    private HttpResponse<String> post(String repository) throws Exception {
-        String body = mapper.writeValueAsString(new ScanRequest(repository));
+    private HttpResponse<String> post() throws Exception {
         return http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/api/scans"))
-                        .header("Content-Type", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString(body)).build(),
+                        .POST(HttpRequest.BodyPublishers.noBody()).build(),
                 HttpResponse.BodyHandlers.ofString());
     }
     private JsonNode json(HttpResponse<String> response) { return mapper.readTree(response.body()); }

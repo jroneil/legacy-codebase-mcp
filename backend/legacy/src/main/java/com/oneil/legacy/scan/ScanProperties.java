@@ -6,11 +6,17 @@ import org.springframework.stereotype.Component;
 @Component
 @ConfigurationProperties("legacy.scan")
 public class ScanProperties {
-    private String repositoryBase = "";
+    private String repositoryRoot = "";
+    private String repositoryName = "";
+    private boolean repositoryConfigured;
     private String analyzerVersion = "database-usage-index-4";
 
-    public String getRepositoryBase() { return repositoryBase; }
-    public void setRepositoryBase(String repositoryBase) { this.repositoryBase = repositoryBase; }
+    public String getRepositoryRoot() { return repositoryRoot; }
+    public void setRepositoryRoot(String repositoryRoot) { this.repositoryRoot = repositoryRoot; }
+    public String getRepositoryName() { return repositoryName; }
+    public void setRepositoryName(String repositoryName) { this.repositoryName = repositoryName; }
+    public boolean isRepositoryConfigured() { return repositoryConfigured; }
+    public void setRepositoryConfigured(boolean repositoryConfigured) { this.repositoryConfigured = repositoryConfigured; }
     public String getAnalyzerVersion() { return analyzerVersion; }
     public void setAnalyzerVersion(String analyzerVersion) { this.analyzerVersion = analyzerVersion; }
 }

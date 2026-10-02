@@ -209,8 +209,8 @@ class TraversalIntegrationTests extends PostgresTestSupport {
                     }
                 }
                 """);
-        properties.setRepositoryBase(root.getParent().toString());
-        assertThat(scanner.scan(root.getFileName().toString()).scan().status()).isEqualTo(ScanModel.Status.COMPLETED);
+        configureRepository(root);
+        assertThat(scanner.scan().scan().status()).isEqualTo(ScanModel.Status.COMPLETED);
         var answer = tables("/customer/search");
         assertThat(answer.tables()).isNotEmpty();
         var chain = answer.tables().stream().filter(t -> t.tableId().equals(TABLE) && t.path().nodes().contains("java:type:demo.CustomerDAOImpl")).findFirst().orElseThrow();

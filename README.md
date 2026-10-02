@@ -36,83 +36,78 @@ recorded in the [validation records](docs/validation/) — including
 
 ## Quick start
 
-Requirements: Docker with Docker Compose, and a physical host directory containing one
-or more legacy repositories. Repositories may be nested below that directory.
+Requirements: Docker with Docker Compose and one physical local repository to analyze.
+On Linux, install `zenity` or `kdialog` for the folder picker; on macOS the launcher
+uses `osascript`. An explicit path works on either platform without a picker.
 
 ```bash
 git clone <this-repository> legacy-codebase-mcp
 cd legacy-codebase-mcp
 cp .env.example .env
-# edit .env: set both POSTGRES_PASSWORD and LEGACY_REPOSITORY_BASE
-docker compose up --build
+# edit .env and set POSTGRES_PASSWORD
+./run-local.sh
 ```
 
-`LEGACY_REPOSITORY_BASE` has no fallback. Set it to a physical, non-symlink host
-directory such as `/srv/legacy-repositories`, with any useful nesting:
+Choose the repository in the native folder picker, or pass it directly:
 
-```text
-/srv/legacy-repositories/
-├── legacy/
-│   ├── legacy-struts/
-│   └── legacy-grails/
-└── other/
-    └── sample-app/
+```bash
+./run-local.sh /data/projects/demo-struts1-main
 ```
+
+The launcher resolves and validates that single directory, builds or starts the
+three-service Docker stack, and mounts exactly that repository at
+`/workspace/target` in the backend container with a read-only bind mount. Repository
+contents are read in place; nothing is uploaded or copied. The launcher prints the
+selected name, physical host path, fixed container mount, and UI URL. PowerShell users
+can run `./run-local.ps1 C:\path\to\repository` or omit the path for the Windows
+folder picker.
 
 The first build compiles the backend and frontend inside Docker, so it downloads Maven
-and npm dependencies and takes several minutes. Later starts reuse the images and take
-seconds. The stack runs exactly three services — `postgres`, `backend` and `frontend` —
-and Compose starts them in order: the backend waits for healthy PostgreSQL, then the
-frontend waits for a healthy backend.
+and npm dependencies and can take several minutes. Later starts reuse cached layers.
+The stack runs exactly `postgres`, `backend`, and `frontend`: the backend waits for
+healthy PostgreSQL, then the frontend waits for a healthy backend.
 
 | What | URL |
 | --- | --- |
 | Explorer UI | http://127.0.0.1:3000 |
+| Scan page | http://127.0.0.1:3000/scan |
 | REST API | http://127.0.0.1:8080 |
 | MCP endpoint | http://127.0.0.1:8080/mcp |
 | Backend health | http://127.0.0.1:8080/actuator/health |
 
-All host ports bind to loopback only, and PostgreSQL is not published to the host.
+The backend and frontend host ports bind to loopback only. PostgreSQL is not published
+to the host.
 
 ### Required `.env` values
 
 | Variable | Meaning |
 | --- | --- |
 | `POSTGRES_PASSWORD` | Any local password. It initializes a new PostgreSQL volume; changing it later does not change an existing volume. |
-| `LEGACY_REPOSITORY_BASE` | Absolute physical host directory that contains the repositories to browse. |
 
-Compose mounts `LEGACY_REPOSITORY_BASE` read-only at `/workspace/repos`. The browser can
-descend through visible directories, while the backend rejects hidden components,
-symlinks, non-directories, missing paths, and paths outside the configured base.
-
-Other optional values, with defaults shown: `POSTGRES_DB=legacy`,
-`POSTGRES_USER=legacy`, `ANALYZER_VERSION=grails-index-5` (recorded with each snapshot as
-freshness metadata), `BACKEND_PORT=8080`, `FRONTEND_PORT=3000`, and
-`POSTGRES_PORT=54329` (used only by the native workflow below). `.env` is gitignored;
-never commit it.
+Optional values and defaults are `POSTGRES_DB=legacy`, `POSTGRES_USER=legacy`,
+`ANALYZER_VERSION=grails-index-5`, `BACKEND_PORT=8080`, `FRONTEND_PORT=3000`, and
+`POSTGRES_PORT=54329` for the native development override. The launcher supplies the
+selected repository path and safe display name at runtime; do not add a repository path
+to `.env`. `.env` is gitignored and must not be committed.
 
 ## Create a scan
 
-Open http://127.0.0.1:3000/scan, browse into the desired folder, and choose
-**Scan this repository**. Opening folders does not start a scan. The page reports the
-result and retains scan history. The equivalent REST flow is:
+Open http://127.0.0.1:3000/scan after using the launcher. The page displays the mounted
+repository name and status; choose **Scan repository**. It also retains the active scan,
+history, and localized error links. The equivalent REST flow is:
 
 ```bash
-curl -s http://127.0.0.1:8080/api/repositories
-curl -s --get http://127.0.0.1:8080/api/repositories --data-urlencode 'path=legacy'
-curl -s --max-time 0 -X POST http://127.0.0.1:8080/api/scans \
-  -H 'Content-Type: application/json' \
-  -d '{"repository":"legacy/legacy-struts"}' | tee scan.json
+curl -s http://127.0.0.1:8080/api/repository
+curl -s --max-time 0 -X POST http://127.0.0.1:8080/api/scans | tee scan.json
 python3 -c "import json;s=json.load(open('scan.json'))['scan'];print(s['repositoryRoot'],s['status'],s['fileCount'],s['errorCount'])"
 ```
 
-`POST /api/scans` is synchronous: the response arrives when the scan finishes, and a
-large repository can take minutes. Progress is not streamed. A failed scan leaves the
-previous active snapshot in place. An invalid selection returns 400 without creating a
-scan; an unavailable repository base returns 503. See [Scan API](#scan-api) for the full
-contract.
+`POST /api/scans` takes no repository path and is synchronous. The backend scans only
+the repository already mounted at `/workspace/target`; large repositories can take
+minutes. A failed scan leaves the previous active snapshot in place. If no safe mounted
+repository is configured, the metadata and scan endpoints return 503.
 
-Then explore the active snapshot:
+Explore the active snapshot through REST or the same underlying MCP services:
 
 ```bash
 curl -s 'http://127.0.0.1:8080/api/symbols/search?q=Customer&limit=20'
@@ -124,45 +119,50 @@ curl -s --get 'http://127.0.0.1:8080/api/entry-points' --data-urlencode 'path=/c
 Point an MCP client at http://127.0.0.1:8080/mcp (see
 [MCP interface](#mcp-interface-slice-6)).
 
-## Add or select another repository
+## Switch repositories
 
-Add another physical directory anywhere under `LEGACY_REPOSITORY_BASE`, then reload the
-scan page, browse to it, and scan it. The backend container does not need to be
-recreated. If you change the base directory itself, update `.env` and recreate the
-backend so Docker can replace the bind mount:
+Rerun the launcher with the other repository:
 
 ```bash
-# edit LEGACY_REPOSITORY_BASE in .env
-docker compose up -d --force-recreate backend
+./run-local.sh /path/to/repo-b
 ```
 
-Each successful scan creates a new immutable snapshot and becomes the one global active
-snapshot. Older completed scan metadata, inventories, symbols, relationships, and errors
-remain stored by scan ID. Each snapshot records its selected in-container root, for
-example `/workspace/repos/legacy/legacy-struts`, plus the repository Git SHA when
-available.
+Compose recreates the backend as needed so the new bind mount takes effect. PostgreSQL
+and its named volume remain in place, so completed scan history is preserved. Scan the
+new mounted repository from `/scan`; its successful immutable snapshot becomes active,
+and older snapshots remain queryable by scan ID. Snapshot metadata stores a safe
+logical label such as `mounted:repo-b`, plus the Git SHA when available, rather than the
+host absolute path.
 
 ## Stop, start, and reset
 
 ```bash
-docker compose stop            # stop the stack; keep the database volume and scan history
-docker compose start           # start it again against the same data
-docker compose down            # remove containers and network; keep the database volume
-docker compose up -d --wait    # start again after down; earlier scans are still there
-docker compose down --volumes  # DESTRUCTIVE: delete the PostgreSQL volume and all scan history
+docker compose stop            # stop containers; keep their selected mount and history
+docker compose start           # restart those same containers
+docker compose down            # remove containers/network; keep PostgreSQL history
+./run-local.sh /path/to/repo    # recreate after down with the intended repository mount
+docker compose down --volumes  # DESTRUCTIVE: delete PostgreSQL and all scan history
 docker compose ps              # service status and health
 docker compose logs -f backend # follow backend logs
-docker compose exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' # exit with \q
 ```
+
+`docker compose down --volumes` is the only command above that removes scan history.
+Running plain `docker compose up` without the launcher uses an intentionally unconfigured
+placeholder mount; the backend refuses scans until a repository is selected through the
+launcher.
 
 ## Security boundary
 
-- The configured repository base is mounted **read-only**; the analyzer never writes to
-  it and never builds or executes target code.
-- PostgreSQL has no host port. Only the backend reaches it, over the Compose network.
-- The UI, REST and MCP host ports bind to `127.0.0.1` only, so MCP stays local.
-- Credentials live in `.env`, which is gitignored. Nothing secret is committed.
-- Analysis is static and local; no source leaves the machine.
+- The launcher mounts exactly one explicitly selected, canonical repository directory
+  read-only at `/workspace/target`; it rejects filesystem roots and broad `/home` or
+  `/Users` roots and never mounts the Docker socket.
+- The backend knows the fixed container path and a safe display name, not the host
+  absolute path. Secure directory-handle inventory rejects unsafe roots and symlinks.
+- The analyzer never writes to, builds, or executes target code. Analysis is static and
+  local; no source leaves the machine and no LLM API is required.
+- PostgreSQL has no host port. Only the backend reaches it over the Compose network.
+- UI, REST, and MCP host ports bind to `127.0.0.1`; credentials stay in gitignored
+  `.env`.
 
 ## Container images
 
@@ -190,91 +190,68 @@ Wire-up inside the Compose network:
 
 ## Native developer workflow (contributors)
 
-For changing the analyzer itself, run the pieces on the host. This keeps fast Java
-iteration and the frontend test suite available. It needs Java 21 (the Maven wrapper at
-`backend/legacy/mvnw` downloads Maven 3.9.16), Node.js 24 with npm, and a working Docker
-daemon for the database and for backend tests (Testcontainers).
+For analyzer development on the host, use Java 21, Node.js 24 with npm, and a working
+Docker daemon for PostgreSQL and Testcontainers.
 
 ```bash
-# 1. PostgreSQL on loopback. The default Compose stack does not publish it; use the
-#    development override only when a host PostgreSQL port is needed.
+# 1. Publish PostgreSQL on loopback only through the development override.
 export POSTGRES_PASSWORD=local-dev-only
 export POSTGRES_DB=legacy
 export POSTGRES_USER=legacy
 export POSTGRES_PORT=54329
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --wait postgres
 
-# 2. Backend on the host.
+# 2. Run the backend on the host against one explicit repository.
 export SPRING_DATASOURCE_URL="jdbc:postgresql://127.0.0.1:${POSTGRES_PORT}/${POSTGRES_DB}"
 export SPRING_DATASOURCE_USERNAME="$POSTGRES_USER"
 export SPRING_DATASOURCE_PASSWORD="$POSTGRES_PASSWORD"
-export LEGACY_REPOSITORY_BASE=/absolute/path/containing/legacy-repositories
+export LEGACY_REPOSITORY_ROOT=/absolute/path/to/one/legacy-repository
+export LEGACY_REPOSITORY_NAME=legacy-repository
+export LEGACY_REPOSITORY_CONFIGURED=true
 cd backend/legacy
 ./mvnw spring-boot:run
 
-# 3. Frontend on the host (optional).
+# 3. Run the frontend on the host (optional).
 cd frontend/legacy-ui
 npm ci
 LEGACY_API_BASE_URL=http://127.0.0.1:8080 npm run dev
 ```
 
-`./mvnw spring-boot:run` compiles and runs the backend directly, so `./mvnw package` is
-not required first. The full backend suite (`cd backend/legacy && ./mvnw test`) and the
-frontend tests and build (`cd frontend/legacy-ui && npm test && npm run build`) use
-disposable resources and need no manual database setup. For a host-run backend the
-Dockerfile is not involved: `SERVER_ADDRESS` is unset, and the application's configured
-default binds to `127.0.0.1`.
-
-To build the images without starting them:
-
-```bash
-docker compose build
-```
+The full backend suite is `cd backend/legacy && ./mvnw test`; frontend validation is
+`cd frontend/legacy-ui && npm test && npm run build`. A host-run backend keeps its
+default loopback binding. To build container images without starting them, run
+`docker compose build`.
 
 ## Scan API
 
-`GET /api/repositories?path=` browses one directory level at a time. The empty path is
-the configured base; a relative path such as `legacy` returns that directory's immediate,
-visible child directories. Responses contain canonical `path`, `parent`, `items`,
-`totalCount`, and `truncated`, with at most 200 items in deterministic order. Item IDs
-are base-relative paths and may contain multiple components. Files, hidden entries, and
-symlinks are never returned.
+`GET /api/repository` returns only safe mounted-repository metadata:
+`{"name":"demo-struts1-main","status":"READY"}`. It never exposes the host path.
+It returns 503 when the launcher has not configured a readable physical repository.
 
-`POST /api/scans` synchronously inventories one repository selected by a discovered ID.
-The JSON request may be `{"repository":"legacy/legacy-struts"}`. Absolute paths, `..`,
-non-normalized paths, hidden components, missing entries, non-directories, symlinks at
-any component, and physical roots outside the configured base are rejected with 400
-before a scan row is created. An unavailable or unsafe base returns 503. `ANALYZER_VERSION` defaults to `grails-index-5` and can be
-overridden. Large repositories take minutes, so allow a long client timeout.
+`POST /api/scans` has no request body. It synchronously inventories the single mounted
+repository, records the configured analyzer version and Git SHA when available, runs the
+indexers, and returns 201 with `Location` plus the completed or failed scan detail.
+Allow a long client timeout for large repositories.
 
 ```bash
-curl 'http://127.0.0.1:8080/api/repositories'
-curl --get 'http://127.0.0.1:8080/api/repositories' --data-urlencode 'path=legacy'
-curl -i --max-time 0 -X POST http://127.0.0.1:8080/api/scans \
-  -H 'Content-Type: application/json' \
-  -d '{"repository":"legacy/legacy-struts"}'
+curl 'http://127.0.0.1:8080/api/repository'
+curl -i --max-time 0 -X POST 'http://127.0.0.1:8080/api/scans'
 curl 'http://127.0.0.1:8080/api/scans?limit=20&offset=0'
 curl 'http://127.0.0.1:8080/api/scans/REPLACE_WITH_SCAN_UUID?limit=100&offset=0'
 ```
 
-- POST returns 201 with `Location` and the resulting scan detail. Inspect
-  `scan.status`: a created scan may finish `COMPLETED` or `FAILED`.
-- List returns `activeScanId` and a page of scan metadata, newest first.
-- Detail returns `scan`, `active`, and separate `files`/`errors` pages.
-  For PENDING, RUNNING, or FAILED scans, inventory is never returned.
-- Each page has `items`, `totalCount`, `offset`, `limit`, and `truncated`.
-  Default limit is 100; maximum is 200. Offsets range from 0 to 1,000,000.
-  Detail applies the same limit/offset independently to files and errors.
-- Unknown scan UUIDs return 404; malformed IDs and invalid page bounds return 400.
+- List returns `activeScanId` and scan metadata newest first.
+- Detail returns `scan`, `active`, and separate `files` and `errors` pages. Inventory is
+  hidden for `PENDING`, `RUNNING`, and `FAILED` scans.
+- Each page includes `items`, `totalCount`, `offset`, `limit`, and `truncated`. Default
+  limit is 100, maximum 200, and offsets range from 0 to 1,000,000.
+- Unknown scan UUIDs return 404; malformed IDs and invalid bounds return 400.
 
-Lifecycle: `PENDING -> RUNNING -> COMPLETED` (then active), or
-`PENDING -> RUNNING -> FAILED`. Collection occurs outside database transactions.
-A single publication transaction inserts all inventory/errors, completes the
-scan, and switches the active pointer. Concurrent publications serialize on
-that pointer; the last successful publication becomes active. Query services
-read a consistent database snapshot. Failure rolls back publication and leaves
-the previous active scan available. Historical completed scans are immutable.
-Each scan has its own file set, so deletions disappear in the next snapshot.
+Lifecycle is `PENDING -> RUNNING -> COMPLETED -> active` or
+`PENDING -> RUNNING -> FAILED`. A single publication transaction commits inventory,
+analysis evidence, completion, and the active pointer. Failed scans and in-progress
+scans never replace or leak into the active snapshot. Historical completed snapshots
+are immutable, and deleted files disappear from the next completed snapshot.
 
 ## Inventory behavior and boundaries
 
@@ -308,8 +285,8 @@ This is a full synchronous scan, not a background job or filesystem snapshot.
 Keep source stable while scanning: ordinary per-file changes are detected and
 omitted with an error, but the recorded Git SHA does not certify a clean tree
 or an atomic checkout. Metadata is held in memory until publication; contents
-are streamed. A fixed repository base can contain multiple selectable repositories;
-there is one global active pointer.
+are streamed. The configured mount contains one repository and there is one global active
+pointer.
 An abrupt process/database failure may leave a PENDING/RUNNING record; it is
 never active and a new POST can proceed. Automatic recovery, retention cleanup,
 custom ignores, incremental scans, and broader encoding detection are not
@@ -688,7 +665,7 @@ Google font loading needs network access during a fresh build. Routes:
 | `/entry-points`, `/entry-points/trace` | routes and their configuration traces |
 | `/trace` | component traversal with bounds, path state, evidence and truncation |
 | `/tables`, `/tables/[id]` | table impact (READ/WRITE/MAPPING, direct vs transitive) and table usages |
-| `/scan` | bounded repository browser, explicit scan trigger, result, active freshness and history |
+| `/scan` | mounted repository metadata, explicit scan trigger, result, active freshness and history |
 | `/errors` | localized analysis errors for a scan |
 
 Pages render on demand (`force-dynamic`, uncached `fetch`), so a build does not need a
@@ -776,22 +753,14 @@ chain is returned by `/api/relationships/trace`.
 
 ## Validation and version control
 
-See [Slice 10.1 validation](docs/validation/SLICE_10_1_VALIDATION.md) (nested repository
-browser), [Slice 10 validation](docs/validation/SLICE_10_VALIDATION.md) (runtime
-repository selection), [Slice 9 validation](docs/validation/SLICE_09_VALIDATION.md)
-(containerized distribution),
-the [real-repository validation](docs/validation/REAL_REPOSITORY_VALIDATION.md)
-(accuracy against the real `weblegacy/struts1` codebase, including the defects it found),
-[Slice 8.1 validation](docs/validation/SLICE_08_1_VALIDATION.md),
-[Slice 8 validation](docs/validation/SLICE_08_VALIDATION.md),
-[Slice 7 validation](docs/validation/SLICE_07_VALIDATION.md),
-[Slice 6 validation](docs/validation/SLICE_06_VALIDATION.md),
-[Slice 5 validation](docs/validation/SLICE_05_VALIDATION.md),
-[Slice 4 validation](docs/validation/SLICE_04_VALIDATION.md),
-[Slice 3 validation](docs/validation/SLICE_03_VALIDATION.md),
-[Slice 2 validation](docs/validation/SLICE_02_VALIDATION.md),
-[Slice 1 validation](docs/validation/SLICE_01_VALIDATION.md), and the earlier
-[Slice 0 record](docs/validation/SLICE_00_VALIDATION.md).
-Validation records identify the commit under test when available. Slice 10 is committed
-in the current baseline; Slice 10.1 remains uncommitted for review. Root ignore rules
-exclude generated output, local credentials and `.env`.
+See [Slice 10.3 validation](docs/validation/SLICE_10_3_VALIDATION.md) for the current
+single-repository launcher and read-only bind-mount workflow. Earlier records remain as
+historical evidence: [Slice 10.1](docs/validation/SLICE_10_1_VALIDATION.md),
+[Slice 10](docs/validation/SLICE_10_VALIDATION.md), and
+[Slice 9](docs/validation/SLICE_09_VALIDATION.md). Analyzer validation is recorded in
+the [real-repository validation](docs/validation/REAL_REPOSITORY_VALIDATION.md) and the
+other [slice records](docs/validation/).
+
+Validation records identify the commit under test when available. Slice 10.3 is
+uncommitted and ready for review. Root ignore rules exclude generated output, local
+credentials, and `.env`.

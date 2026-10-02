@@ -4,21 +4,13 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createScan } from "@/lib/api";
 
-export async function startScan(formData: FormData): Promise<void> {
-  const value = formData.get("repository");
-  const repository = typeof value === "string" ? value : "";
-  if (!repository) {
-    redirect("/scan?error=Select+a+repository+before+starting+a+scan.");
-  }
-
-  const result = await createScan(repository);
+export async function startScan(): Promise<void> {
+  const result = await createScan();
   if (!result.ok) {
-    redirect(`/scan?path=${encodeURIComponent(repository)}&error=${encodeURIComponent(result.error)}`);
+    redirect(`/scan?error=${encodeURIComponent(result.error)}`);
   }
 
   revalidatePath("/scan");
   const scan = result.data.scan;
-  redirect(
-    `/scan?path=${encodeURIComponent(repository)}&scanId=${encodeURIComponent(scan.id)}&status=${encodeURIComponent(scan.status)}`,
-  );
+  redirect(`/scan?scanId=${encodeURIComponent(scan.id)}&status=${encodeURIComponent(scan.status)}`);
 }

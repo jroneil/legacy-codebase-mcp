@@ -146,8 +146,7 @@ export type AnalysisError = {
 };
 
 export type ScanList = { activeScanId: string | null; scans: Page<Scan> };
-export type RepositoryItem = { id: string; name: string };
-export type RepositoryList = { path: string; parent: string | null; items: RepositoryItem[]; totalCount: number; truncated: boolean };
+export type MountedRepository = { name: string; status: string };
 export type ScanDetail = { scan: Scan; active: boolean; files: Page<SourceFile>; errors: Page<AnalysisError> };
 
 export const DEFAULT_API_BASE_URL = "http://127.0.0.1:8080";
@@ -277,10 +276,10 @@ export function scanDetail(scanId: string, limit = 100, offset = 0) {
   return get<ScanDetail>(`/api/scans/${encodeURIComponent(scanId)}`, { limit, offset });
 }
 
-export function listRepositories(path = "") {
-  return get<RepositoryList>("/api/repositories", { path });
+export function mountedRepository() {
+  return get<MountedRepository>("/api/repository");
 }
 
-export function createScan(repository: string) {
-  return postJson<ScanDetail>("/api/scans", { repository });
+export function createScan() {
+  return postJson<ScanDetail>("/api/scans", {});
 }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { encodeId, decodeId, createScan, listRepositories, searchSymbols, scanDetail, symbolDetail } from "@/lib/api";
+import { encodeId, decodeId, createScan, mountedRepository, searchSymbols, scanDetail, symbolDetail } from "@/lib/api";
 import { freshness, page, scanDetail as scanDetailFixture, symbol } from "../test/fixtures";
 
 function mockFetch(handler: (url: URL) => Response | Promise<Response>) {
@@ -76,54 +76,27 @@ describe("api client", () => {
     expect(url.pathname).toBe("/api/scans/11111111-1111-1111-1111-111111111111");
   });
 
-  it("browses a nested path and sends the nested repository in the scan request", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+  it("loads mounted repository metadata and starts a scan without a client path", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = input instanceof URL ? input : new URL(typeof input === "string" ? input : input.url);
-      if (url.pathname === "/api/repositories") {
-        return json({
-          path: "legacy",
-          parent: "",
-          items: [{ id: "legacy/old-struts-app", name: "old-struts-app" }],
-          totalCount: 1,
-          truncated: false,
-        });
-      }
-      return json(scanDetailFixture(), 201);
+      return url.pathname === "/api/repository"
+        ? json({ name: "old-struts-app", status: "READY" })
+        : json(scanDetailFixture(), 201);
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const repositories = await listRepositories("legacy");
-    const created = await createScan("legacy/old-struts-app");
+    expect(await mountedRepository()).toEqual({ ok: true, data: { name: "old-struts-app", status: "READY" } });
+    expect(await createScan()).toMatchObject({ ok: true });
 
-    expect(repositories).toEqual({
-      ok: true,
-      data: {
-        path: "legacy",
-        parent: "",
-        items: [{ id: "legacy/old-struts-app", name: "old-struts-app" }],
-        totalCount: 1,
-        truncated: false,
-      },
-    });
-    const browseUrl = fetchMock.mock.calls[0][0] as URL;
-    expect(browseUrl.pathname).toBe("/api/repositories");
-    expect(browseUrl.searchParams.get("path")).toBe("legacy");
-    expect(created.ok).toBe(true);
+    expect((fetchMock.mock.calls[0][0] as URL).pathname).toBe("/api/repository");
     const scanCall = fetchMock.mock.calls[1];
     expect((scanCall[0] as URL).pathname).toBe("/api/scans");
     expect(scanCall[1]).toMatchObject({
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ repository: "legacy/old-struts-app" }),
+      body: JSON.stringify({}),
       cache: "no-store",
     });
-  });
-
-  it("omits the path query at repository root", async () => {
-    const mock = mockFetch(() => json({ path: "", parent: null, items: [], totalCount: 0, truncated: false }));
-    await listRepositories();
-    const url = mock.mock.calls[0][0] as URL;
-    expect(url.searchParams.has("path")).toBe(false);
   });
 
   it("decodes dynamic route segments back into the original stable ID", () => {

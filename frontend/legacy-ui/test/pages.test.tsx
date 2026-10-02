@@ -265,90 +265,54 @@ describe("table impact pages", () => {
 describe("scan and error pages", () => {
   const id = "11111111-1111-1111-1111-111111111111";
 
-  it("renders repository-root children without a scan button", async () => {
+  it("renders mounted repository metadata, scan action, active state and history", async () => {
     mock({
-      "/api/repositories": {
-        path: "",
-        parent: null,
-        items: [
-          { id: "legacy", name: "legacy" },
-          { id: "other", name: "other" },
-        ],
-        totalCount: 2,
-        truncated: false,
-      },
-      "/api/scans": { activeScanId: id, scans: page([scan()]) },
+      "/api/repository": { name: "demo-struts1-main", status: "READY" },
+      "/api/scans": { activeScanId: id, scans: page([scan({ repositoryRoot: "mounted:demo-struts1-main" })]) },
       ["/api/scans/" + id]: scanDetail(),
     });
     const html = renderToStaticMarkup(await ScanPage());
-    expect(html).toContain("Browse repositories");
-    expect(html).toContain('href="/scan?path=legacy"');
-    expect(html).toContain('href="/scan?path=other"');
-    expect(html).toContain("Open a child folder");
-    expect(html).not.toContain("Scan this repository");
+    expect(html).toContain("Repository");
+    expect(html).toContain("demo-struts1-main");
+    expect(html).toContain("Status: ready");
+    expect(html).toContain("Mounted read-only by the local launcher.");
+    expect(html).toContain("Scan repository");
+    expect(html).not.toContain("Browse repositories");
+    expect(html).not.toContain('type="file"');
     expect(html).toContain("COMPLETED");
     expect(html).toContain("active");
+    expect(html).toContain("mounted:demo-struts1-main");
   });
 
-  it("renders nested navigation, Up, and an explicit scan-current-folder form", async () => {
+  it("shows scan completion and failure messages", async () => {
     mock({
-      "/api/repositories": {
-        path: "legacy",
-        parent: "",
-        items: [
-          { id: "legacy/grails-app", name: "grails-app" },
-          { id: "legacy/struts-app", name: "struts-app" },
-        ],
-        totalCount: 2,
-        truncated: false,
-      },
+      "/api/repository": { name: "demo", status: "READY" },
       "/api/scans": { activeScanId: null, scans: page([]) },
     });
-    const html = renderToStaticMarkup(
-      await ScanPage({ searchParams: params({ path: "legacy", scanId: id, status: "COMPLETED" }) }),
+    const completed = renderToStaticMarkup(
+      await ScanPage({ searchParams: params({ scanId: id, status: "COMPLETED" }) }),
     );
-    expect(html).toContain("Current folder");
-    expect(html).toContain('href="/scan"');
-    expect(html).toContain(">Up<");
-    expect(html).toContain('href="/scan?path=legacy%2Fgrails-app"');
-    expect(html).toContain('name="repository" value="legacy"');
-    expect(html).toContain("Selected repository:");
-    expect(html).toContain("Scan this repository");
-    expect(html).toContain("completed and is now active");
+    expect(completed).toContain("completed and is now active");
+    const failed = renderToStaticMarkup(
+      await ScanPage({ searchParams: params({ scanId: id, status: "FAILED" }) }),
+    );
+    expect(failed).toContain("previous completed scan remains active");
   });
 
-  it("lets an empty nested folder remain the selected scan target", async () => {
-    mock({
-      "/api/repositories": {
-        path: "other/sample-app",
-        parent: "other",
-        items: [],
-        totalCount: 0,
-        truncated: false,
-      },
-      "/api/scans": { activeScanId: null, scans: page([]) },
-    });
-    const html = renderToStaticMarkup(await ScanPage({ searchParams: params({ path: "other/sample-app" }) }));
-    expect(html).toContain("This folder has no visible child directories.");
-    expect(html).toContain('href="/scan?path=other"');
-    expect(html).toContain('name="repository" value="other/sample-app"');
-    expect(html).toContain("Scan this repository");
-  });
-
-  it("shows stale-path recovery, backend discovery errors, and scan-action errors", async () => {
+  it("shows mounted-repository and scan-action errors", async () => {
     mock(
       {
-        "/api/repositories": { error: "Invalid repository path." },
+        "/api/repository": { error: "No readable repository is mounted." },
         "/api/scans": { activeScanId: null, scans: page([]) },
       },
-      { "/api/repositories": 400 },
+      { "/api/repository": 503 },
     );
     const html = renderToStaticMarkup(
-      await ScanPage({ searchParams: params({ path: "removed/repository", error: "Scan request failed." }) }),
+      await ScanPage({ searchParams: params({ error: "Scan request failed." }) }),
     );
-    expect(html).toContain("Invalid request: Invalid repository path.");
-    expect(html).toContain("Return to repository root");
+    expect(html).toContain("No readable repository is mounted.");
     expect(html).toContain("Scan request failed.");
+    expect(html).not.toContain("Scan repository");
   });
 
   it("renders analysis errors with file, stage, state and message", async () => {
