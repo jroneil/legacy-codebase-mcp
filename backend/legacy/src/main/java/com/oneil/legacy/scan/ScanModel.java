@@ -33,6 +33,9 @@ public final class ScanModel {
             errors = List.copyOf(errors);
         }
     }
+    public record ScanRequest(String repository) {}
+    public record RepositoryItem(String id, String name) {}
+    public record RepositoryList(List<RepositoryItem> items, long totalCount, boolean truncated) {}
     public record Page<T>(List<T> items, long totalCount, int offset, int limit, boolean truncated) {}
     public record ScanList(UUID activeScanId, Page<Scan> scans) {}
     public record ScanDetail(Scan scan, boolean active, Page<SourceFile> files, Page<AnalysisError> errors) {}

@@ -146,6 +146,8 @@ export type AnalysisError = {
 };
 
 export type ScanList = { activeScanId: string | null; scans: Page<Scan> };
+export type RepositoryItem = { id: string; name: string };
+export type RepositoryList = { items: RepositoryItem[]; totalCount: number; truncated: boolean };
 export type ScanDetail = { scan: Scan; active: boolean; files: Page<SourceFile>; errors: Page<AnalysisError> };
 
 export const DEFAULT_API_BASE_URL = "http://127.0.0.1:8080";
@@ -181,6 +183,29 @@ async function get<T>(path: string, params: Record<string, string | number | und
     response = await fetch(url, { cache: "no-store" });
   } catch {
     return { ok: false, error: `Backend unreachable at ${apiBaseUrl()}. Start the backend and retry.` };
+  }
+  if (!response.ok) {
+    return { ok: false, status: response.status, error: await describeFailure(response) };
+  }
+  try {
+    return { ok: true, data: (await response.json()) as T };
+  } catch {
+    return { ok: false, status: response.status, error: "Backend returned a response that is not JSON." };
+  }
+}
+
+async function postJson<T>(path: string, body: unknown): Promise<ApiResult<T>> {
+  const url = new URL(path, apiBaseUrl());
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+  } catch {
+    return { ok: false, error: "Backend unreachable at " + apiBaseUrl() + ". Start the backend and retry." };
   }
   if (!response.ok) {
     return { ok: false, status: response.status, error: await describeFailure(response) };
@@ -250,4 +275,12 @@ export function listScans(limit = 20, offset = 0) {
 
 export function scanDetail(scanId: string, limit = 100, offset = 0) {
   return get<ScanDetail>(`/api/scans/${encodeURIComponent(scanId)}`, { limit, offset });
+}
+
+export function listRepositories() {
+  return get<RepositoryList>("/api/repositories");
+}
+
+export function createScan(repository: string) {
+  return postJson<ScanDetail>("/api/scans", { repository });
 }

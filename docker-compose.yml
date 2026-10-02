@@ -1,8 +1,8 @@
 name: legacy-codebase-mcp
 
 # Default path: docker compose up --build
-#   cp .env.example .env, set LEGACY_REPOSITORY_ROOT and POSTGRES_PASSWORD, then start.
-# Only PostgreSQL, the backend and the frontend run here. The analyzed repository is
+#   cp .env.example .env, set LEGACY_REPOSITORY_BASE and POSTGRES_PASSWORD, then start.
+# Only PostgreSQL, the backend and the frontend run here. The repository base is
 # mounted read-only; no target build or target code is executed.
 
 services:
@@ -31,11 +31,11 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-legacy}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-legacy}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
-      # Fixed path inside the container; the host repository is mounted there read-only.
-      LEGACY_REPOSITORY_ROOT: /workspace/target
+      # Fixed namespace inside the container; the host repository base is mounted there read-only.
+      LEGACY_REPOSITORY_BASE: /workspace/repos
       ANALYZER_VERSION: ${ANALYZER_VERSION:-grails-index-5}
     volumes:
-      - "${LEGACY_REPOSITORY_ROOT:?Set LEGACY_REPOSITORY_ROOT in .env}:/workspace/target:ro"
+      - "${LEGACY_REPOSITORY_BASE:-.}:/workspace/repos:ro"
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8080}:8080"
     depends_on:

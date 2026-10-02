@@ -47,14 +47,14 @@ class GrailsIntegrationTests extends PostgresTestSupport {
         jdbc.execute("TRUNCATE java_relationship, java_symbol, source_file, analysis_error, active_scan, scan");
         jdbc.update("INSERT INTO active_scan(singleton) VALUES (true)");
         GrailsIndexerTests.copyFixture(root);
-        properties.setRepositoryRoot(root.toString());
+        properties.setRepositoryBase(root.getParent().toString());
         properties.setAnalyzerVersion("grails-index-5-test");
     }
 
     Answer tables(String component) { return queries.query(component, Mode.DATABASE_TABLES, Direction.OUTGOING, bounds); }
 
     @Test void grailsFlowIsTraceableThroughServicesAndRestAndMcp() throws Exception {
-        var scan = scans.scan();
+        var scan = scans.scan(root.getFileName().toString());
         assertThat(scan.scan().status()).isEqualTo(ScanModel.Status.COMPLETED);
         assertThat(scan.scan().analyzerVersion()).isEqualTo("grails-index-5-test");
 
@@ -95,10 +95,10 @@ class GrailsIntegrationTests extends PostgresTestSupport {
     }
 
     @Test void grailsEvidenceIsStableAcrossRescansAndSnapshotsStayIsolated() throws Exception {
-        var first = scans.scan().scan().id();
+        var first = scans.scan(root.getFileName().toString()).scan().id();
         var firstSymbols = signatures(first);
         assertThat(firstSymbols).isNotEmpty();
-        var second = scans.scan().scan().id();
+        var second = scans.scan(root.getFileName().toString()).scan().id();
         assertThat(second).isNotEqualTo(first);
         assertThat(signatures(second)).isEqualTo(firstSymbols);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM java_symbol WHERE scan_id=?", Integer.class, first))
@@ -107,7 +107,7 @@ class GrailsIntegrationTests extends PostgresTestSupport {
     }
 
     @Test void analysisErrorsArePersistedAndExposedWithStableBehaviour() throws Exception {
-        var scan = scans.scan();
+        var scan = scans.scan(root.getFileName().toString());
         var stored = jdbc.queryForList("SELECT code, relative_path, stage FROM analysis_error WHERE scan_id=? ORDER BY code",
                 scan.scan().id());
         assertThat(stored).anySatisfy(row -> {
@@ -121,7 +121,7 @@ class GrailsIntegrationTests extends PostgresTestSupport {
     }
 
     @Test void ambiguousInjectionDoesNotInventTableImpact() throws Exception {
-        scans.scan();
+        scans.scan(root.getFileName().toString());
         var usages = queries.query("CUSTOMER", Mode.TABLE_USAGES, Direction.INCOMING, bounds);
         assertThat(usages.tables()).isNotEmpty();
         assertThat(usages.tables()).noneMatch(t -> t.componentId().contains("AmbiguousController"));
@@ -136,8 +136,8 @@ class GrailsIntegrationTests extends PostgresTestSupport {
     @Test void strutsRepositoryKeepsPriorBehaviourAndAddsNoGrailsEvidence() throws Exception {
         Path struts = root.resolve("struts-repository");
         copyFixture("/fixtures/struts-spring", struts);
-        properties.setRepositoryRoot(struts.toString());
-        var scan = scans.scan();
+        properties.setRepositoryBase(root.toString());
+        var scan = scans.scan("struts-repository");
         assertThat(scan.scan().status()).isEqualTo(ScanModel.Status.COMPLETED);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM java_symbol WHERE scan_id=? AND (stable_id LIKE 'groovy:%' OR stable_id LIKE 'grails:%')",
                 Integer.class, scan.scan().id())).isZero();

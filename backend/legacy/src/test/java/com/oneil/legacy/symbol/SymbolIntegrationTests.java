@@ -51,13 +51,13 @@ class SymbolIntegrationTests extends PostgresTestSupport {
                 if (Files.isDirectory(file)) Files.createDirectories(destination); else Files.copy(file, destination);
             }
         }
-        properties.setRepositoryRoot(root.toString());
+        properties.setRepositoryBase(root.getParent().toString());
         properties.setAnalyzerVersion("java-symbol-index-2-test");
     }
 
     @Test
     void restSearchDetailAndUsagesReturnEvidenceAndAmbiguousCandidates() throws Exception {
-        var scan = scans.scan();
+        var scan = scans.scan(root.getFileName().toString());
         assertThat(scan.scan().status()).isEqualTo(ScanModel.Status.COMPLETED);
         assertThat(scan.errors().items()).anyMatch(e -> e.code().equals("JAVA_PARSE"));
         var response = get("/api/symbols/search?q=Service");
@@ -89,15 +89,15 @@ class SymbolIntegrationTests extends PostgresTestSupport {
 
     @Test
     void repeatScansAreStableAndDeletedSymbolsDisappearOnlyFromNewSnapshot() throws Exception {
-        var first = scans.scan();
+        var first = scans.scan(root.getFileName().toString());
         var baseline = symbols.search("", 200, 0).candidates().items();
         var relationships = symbols.detail("java:type:demo.Service", 200, 0).outgoing();
-        var second = scans.scan();
+        var second = scans.scan(root.getFileName().toString());
         assertThat(second.scan().status()).isEqualTo(ScanModel.Status.COMPLETED);
         assertThat(symbols.search("", 200, 0).candidates().items()).isEqualTo(baseline);
         assertThat(symbols.detail("java:type:demo.Service", 200, 0).outgoing()).isEqualTo(relationships);
         Files.delete(root.resolve("other/src/main/java/other/Service.java"));
-        var third = scans.scan();
+        var third = scans.scan(root.getFileName().toString());
         assertThat(third.scan().status()).isEqualTo(ScanModel.Status.COMPLETED);
         assertThat(symbols.search("", 200, 0).candidates().items()).noneMatch(s -> s.stableId().equals("java:type:other.Service"));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM java_symbol WHERE scan_id=? AND stable_id='java:type:other.Service'",
@@ -107,7 +107,7 @@ class SymbolIntegrationTests extends PostgresTestSupport {
 
     @Test
     void symbolReadersNeverSeeUncommittedPublication() throws Exception {
-        var first = scans.scan();
+        var first = scans.scan(root.getFileName().toString());
         Files.writeString(root.resolve("New.java"), "class NewlyAdded {}");
         var inventory = inventory();
         UUID id = scanStore.create(root.toString(), "test");
@@ -134,14 +134,14 @@ class SymbolIntegrationTests extends PostgresTestSupport {
 
     @Test
     void failedSymbolPublicationRollsBackAndKeepsPriorAnalysis() throws Exception {
-        var first = scans.scan();
+        var first = scans.scan(root.getFileName().toString());
         var collected = inventory();
         Symbol duplicate = collected.javaIndex().symbols().getFirst();
         var broken = new Index(List.of(duplicate, duplicate), List.of(), List.of());
         var failing = new JavaSymbolIndexer() {
             @Override public Index index(Path path, ScanModel.Inventory ignored) { return broken; }
         };
-        var result = new ScanService(scanStore, new RepositoryInventory(), properties, failing, new com.oneil.legacy.grails.GrailsIndexer(), new FrameworkIndexer(), new com.oneil.legacy.database.DatabaseIndexer()).scan();
+        var result = new ScanService(scanStore, new RepositoryInventory(), properties, new RepositoryCatalog(properties), failing, new com.oneil.legacy.grails.GrailsIndexer(), new FrameworkIndexer(), new com.oneil.legacy.database.DatabaseIndexer()).scan(root.getFileName().toString());
         assertThat(result.scan().status()).isEqualTo(ScanModel.Status.FAILED);
         assertThat(symbols.search("", 100, 0).freshness().scanId()).isEqualTo(first.scan().id());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM java_symbol WHERE scan_id=?", Integer.class, result.scan().id())).isZero();
@@ -163,7 +163,7 @@ class SymbolIntegrationTests extends PostgresTestSupport {
         assertThat(symbols.search("", 100, 0).candidates().items()).isEmpty();
         scanStore.fail(id);
         assertThat(symbols.search("", 100, 0).candidates().items()).isEmpty();
-        var complete = scans.scan();
+        var complete = scans.scan(root.getFileName().toString());
         assertThatThrownBy(() -> jdbc.update("UPDATE java_symbol SET simple_name='changed' WHERE scan_id=?", complete.scan().id())).isInstanceOf(DataAccessException.class);
         assertThatThrownBy(() -> jdbc.update("DELETE FROM java_relationship WHERE scan_id=?", complete.scan().id())).isInstanceOf(DataAccessException.class);
     }

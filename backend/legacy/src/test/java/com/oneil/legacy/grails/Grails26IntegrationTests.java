@@ -49,12 +49,12 @@ class Grails26IntegrationTests extends PostgresTestSupport {
         jdbc.execute("TRUNCATE java_relationship, java_symbol, source_file, analysis_error, active_scan, scan");
         jdbc.update("INSERT INTO active_scan(singleton) VALUES (true)");
         Grails26IndexerTests.copyFixture(root);
-        properties.setRepositoryRoot(root.toString());
+        properties.setRepositoryBase(root.getParent().toString());
         properties.setAnalyzerVersion("grails-2.6-index-test");
     }
 
     @Test void grails26RouteToTableFlowIsTraceableThroughRestAndMcp() throws Exception {
-        var scan = scans.scan();
+        var scan = scans.scan(root.getFileName().toString());
         assertThat(scan.scan().status()).isEqualTo(ScanModel.Status.COMPLETED);
         assertThat(scan.scan().analyzerVersion()).isEqualTo("grails-2.6-index-test");
 
@@ -92,11 +92,11 @@ class Grails26IntegrationTests extends PostgresTestSupport {
     }
 
     @Test void legacyAnalysisErrorsAndSnapshotIsolationArePreserved() throws Exception {
-        var first = scans.scan().scan().id();
+        var first = scans.scan(root.getFileName().toString()).scan().id();
         assertThat(jdbc.queryForList("SELECT code, stage FROM analysis_error WHERE scan_id=? AND code='GROOVY_PARSE'", first))
                 .singleElement().satisfies(row -> assertThat(row.get("stage")).isEqualTo("GROOVY"));
         var symbolCount = jdbc.queryForObject("SELECT count(*) FROM java_symbol WHERE scan_id=?", Integer.class, first);
-        var second = scans.scan().scan().id();
+        var second = scans.scan(root.getFileName().toString()).scan().id();
         assertThat(second).isNotEqualTo(first);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM java_symbol WHERE scan_id=?", Integer.class, first)).isEqualTo(symbolCount);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM java_symbol WHERE scan_id=?", Integer.class, second)).isEqualTo(symbolCount);
@@ -105,8 +105,8 @@ class Grails26IntegrationTests extends PostgresTestSupport {
 
     @Test void grails3AndStrutsBehaviourIsUnchanged() throws Exception {
         GrailsIntegrationTests.copyFixture("/fixtures/grails", root.resolve("grails3"));
-        properties.setRepositoryRoot(root.resolve("grails3").toString());
-        var grails3 = scans.scan();
+        properties.setRepositoryBase(root.toString());
+        var grails3 = scans.scan("grails3");
         assertThat(grails3.scan().status()).isEqualTo(ScanModel.Status.COMPLETED);
         assertThat(queries.query("/customer/$id", Mode.TRACE, Direction.OUTGOING, bounds).traversal().paths())
                 .anySatisfy(path -> assertThat(path.nodes()).containsExactly(
@@ -121,8 +121,7 @@ class Grails26IntegrationTests extends PostgresTestSupport {
                 Integer.class, grails3.scan().id())).isEqualTo(1);
 
         GrailsIntegrationTests.copyFixture("/fixtures/struts-spring", root.resolve("struts"));
-        properties.setRepositoryRoot(root.resolve("struts").toString());
-        var struts = scans.scan();
+        var struts = scans.scan("struts");
         assertThat(struts.scan().status()).isEqualTo(ScanModel.Status.COMPLETED);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM java_symbol WHERE scan_id=? AND (stable_id LIKE 'groovy:%' OR stable_id LIKE 'grails:%')",
                 Integer.class, struts.scan().id())).isZero();

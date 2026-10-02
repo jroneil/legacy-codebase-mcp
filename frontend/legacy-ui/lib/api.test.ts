@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { encodeId, decodeId, searchSymbols, scanDetail, symbolDetail } from "@/lib/api";
+import { encodeId, decodeId, createScan, listRepositories, searchSymbols, scanDetail, symbolDetail } from "@/lib/api";
 import { freshness, page, scanDetail as scanDetailFixture, symbol } from "../test/fixtures";
 
 function mockFetch(handler: (url: URL) => Response | Promise<Response>) {
@@ -74,6 +74,34 @@ describe("api client", () => {
     await scanDetail("11111111-1111-1111-1111-111111111111");
     const url = mock.mock.calls[0][0] as URL;
     expect(url.pathname).toBe("/api/scans/11111111-1111-1111-1111-111111111111");
+  });
+
+  it("lists repositories and sends the selected repository in the scan request", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input instanceof URL ? input : new URL(typeof input === "string" ? input : input.url);
+      if (url.pathname === "/api/repositories") {
+        return json({ items: [{ id: "legacy-struts", name: "legacy-struts" }], totalCount: 1, truncated: false });
+      }
+      return json(scanDetailFixture(), 201);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = await listRepositories();
+    const created = await createScan("legacy-struts");
+
+    expect(repositories).toEqual({
+      ok: true,
+      data: { items: [{ id: "legacy-struts", name: "legacy-struts" }], totalCount: 1, truncated: false },
+    });
+    expect(created.ok).toBe(true);
+    const scanCall = fetchMock.mock.calls[1];
+    expect((scanCall[0] as URL).pathname).toBe("/api/scans");
+    expect(scanCall[1]).toMatchObject({
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ repository: "legacy-struts" }),
+      cache: "no-store",
+    });
   });
 
   it("decodes dynamic route segments back into the original stable ID", () => {

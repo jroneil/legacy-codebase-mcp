@@ -39,10 +39,10 @@ class DatabaseIntegrationTests extends PostgresTestSupport {
         jdbc.execute("TRUNCATE java_relationship, java_symbol, source_file, analysis_error, active_scan, scan");
         jdbc.update("INSERT INTO active_scan(singleton) VALUES (true)");
         DatabaseIndexerTests.copyFixture(root);
-        properties.setRepositoryRoot(root.toString()); properties.setAnalyzerVersion("database-usage-index-4-test");
+        properties.setRepositoryBase(root.getParent().toString()); properties.setAnalyzerVersion("database-usage-index-4-test");
     }
     @Test void restReturnsDirectTableUsageQueryMetadataAndLocalizedErrors() throws Exception {
-        var scan = scans.scan();
+        var scan = scans.scan(root.getFileName().toString());
         assertThat(scan.scan().status()).isEqualTo(ScanModel.Status.COMPLETED);
         assertThat(scan.errors().items()).extracting(e -> e.code()).contains("SQL_PARSE", "SQL_DYNAMIC", "HIBERNATE_XML_PARSE");
         var search = get("/api/symbols/search?q=" + encode("db:table:CUSTOMER"));
@@ -62,18 +62,18 @@ class DatabaseIntegrationTests extends PostgresTestSupport {
         assertThat(mapper.writeValueAsString(symbols.search("", 200, 0))).doesNotContain("fixture-secret-must-not-escape");
     }
     @Test void repeatedSnapshotsKeepIdentitiesAndDeletedDatabaseEvidenceDisappears() throws Exception {
-        var first = scans.scan(); var baseline = symbols.search("", 200, 0).candidates().items();
+        var first = scans.scan(root.getFileName().toString()); var baseline = symbols.search("", 200, 0).candidates().items();
         var usages = symbols.usages("db:table:CUSTOMER", 200, 0).usages().items();
-        assertThat(scans.scan().scan().status()).isEqualTo(ScanModel.Status.COMPLETED);
+        assertThat(scans.scan(root.getFileName().toString()).scan().status()).isEqualTo(ScanModel.Status.COMPLETED);
         assertThat(symbols.search("", 200, 0).candidates().items()).isEqualTo(baseline);
         assertThat(symbols.usages("db:table:CUSTOMER", 200, 0).usages().items()).isEqualTo(usages);
         Files.delete(root.resolve("src/demo/CustomerDAO.java")); Files.delete(root.resolve("src/demo/SqlConstants.java")); Files.delete(root.resolve("Customer.hbm.xml"));
-        assertThat(scans.scan().scan().status()).isEqualTo(ScanModel.Status.COMPLETED);
+        assertThat(scans.scan(root.getFileName().toString()).scan().status()).isEqualTo(ScanModel.Status.COMPLETED);
         assertThat(symbols.search("db:table:CUSTOMER", 200, 0).candidates().items()).isEmpty();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM java_symbol WHERE scan_id=? AND kind='DATABASE_TABLE'", Integer.class, first.scan().id())).isPositive();
     }
     @Test void uncommittedDatabasePublicationLeavesOldModelVisible() throws Exception {
-        var first = scans.scan();
+        var first = scans.scan(root.getFileName().toString());
         Files.writeString(root.resolve("src/demo/NewDAO.java"), "package demo; class NewDAO { void run(java.sql.Statement st) throws Exception { st.executeQuery(\"SELECT * FROM NEW_TABLE\"); } }");
         var inventory = inventory(); UUID id = scanStore.create(root.toString(), "test"); scanStore.start(id);
         var ready = new CountDownLatch(1); var release = new CountDownLatch(1);
@@ -93,7 +93,7 @@ class DatabaseIntegrationTests extends PostgresTestSupport {
         assertThat(symbols.search("db:table:NEW_TABLE", 100, 0).candidates().items()).hasSize(1);
     }
     @Test void failedDatabaseInsertionRollsBackAndPreservesPriorActiveSnapshot() {
-        var first = scans.scan();
+        var first = scans.scan(root.getFileName().toString());
         var failing = new DatabaseIndexer() {
             @Override public Index index(Path root, ScanModel.Inventory inventory, Index existing) {
                 var good = super.index(root, inventory, existing); var invalid = new ArrayList<>(good.relationships());
@@ -101,7 +101,7 @@ class DatabaseIntegrationTests extends PostgresTestSupport {
                 return new Index(good.symbols(), invalid, good.errors());
             }
         };
-        var failure = new ScanService(scanStore, new RepositoryInventory(), properties, new JavaSymbolIndexer(), new com.oneil.legacy.grails.GrailsIndexer(), new FrameworkIndexer(), failing).scan();
+        var failure = new ScanService(scanStore, new RepositoryInventory(), properties, new RepositoryCatalog(properties), new JavaSymbolIndexer(), new com.oneil.legacy.grails.GrailsIndexer(), new FrameworkIndexer(), failing).scan(root.getFileName().toString());
         assertThat(failure.scan().status()).isEqualTo(ScanModel.Status.FAILED);
         assertThat(symbols.search("CUSTOMER", 100, 0).freshness().scanId()).isEqualTo(first.scan().id());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM java_symbol WHERE scan_id=?", Integer.class, failure.scan().id())).isZero();
@@ -115,7 +115,7 @@ class DatabaseIntegrationTests extends PostgresTestSupport {
         });
         assertThat(symbols.search("CUSTOMER", 100, 0).candidates().items()).isEmpty(); scanStore.fail(id);
         assertThat(symbols.search("CUSTOMER", 100, 0).candidates().items()).isEmpty();
-        var complete = scans.scan();
+        var complete = scans.scan(root.getFileName().toString());
         assertThatThrownBy(() -> jdbc.update("UPDATE java_symbol SET signature='changed' WHERE scan_id=? AND kind='QUERY_ARTIFACT'", complete.scan().id())).isInstanceOf(DataAccessException.class);
         assertThatThrownBy(() -> jdbc.update("DELETE FROM java_relationship WHERE scan_id=? AND relationship_type='READS_TABLE'", complete.scan().id())).isInstanceOf(DataAccessException.class);
     }

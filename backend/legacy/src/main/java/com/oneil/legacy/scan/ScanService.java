@@ -5,11 +5,10 @@ import com.oneil.legacy.symbol.JavaSymbolIndexer;
 import com.oneil.legacy.grails.GrailsIndexer;
 import com.oneil.legacy.framework.FrameworkIndexer;
 import com.oneil.legacy.database.DatabaseIndexer;
+import com.oneil.legacy.scan.RepositoryCatalog.RepositorySelection;
 import static com.oneil.legacy.scan.ScanModel.*;
 
 import java.io.IOException;
-import java.nio.file.InvalidPathException;
-import java.nio.file.Path;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -17,15 +16,19 @@ public class ScanService {
     private final ScanStore store;
     private final RepositoryInventory inventory;
     private final ScanProperties properties;
+    private final RepositoryCatalog repositories;
     private final JavaSymbolIndexer indexer;
     private final GrailsIndexer grails;
     private final FrameworkIndexer frameworks;
     private final DatabaseIndexer database;
 
-    public ScanService(ScanStore store, RepositoryInventory inventory, ScanProperties properties, JavaSymbolIndexer indexer, GrailsIndexer grails, FrameworkIndexer frameworks, DatabaseIndexer database) {
+    public ScanService(ScanStore store, RepositoryInventory inventory, ScanProperties properties,
+            RepositoryCatalog repositories, JavaSymbolIndexer indexer, GrailsIndexer grails,
+            FrameworkIndexer frameworks, DatabaseIndexer database) {
         this.store = store;
         this.inventory = inventory;
         this.properties = properties;
+        this.repositories = repositories;
         this.indexer = indexer;
         this.grails = grails;
         this.frameworks = frameworks;
@@ -33,15 +36,13 @@ public class ScanService {
     }
 
     // Intentionally not transactional: each lifecycle step commits separately.
-    public ScanDetail scan() {
-        String configuredRoot = properties.getRepositoryRoot();
+    public ScanDetail scan(String repository) {
         String version = properties.getAnalyzerVersion();
-        if (configuredRoot == null || configuredRoot.isBlank() || version == null || version.isBlank() || version.length() > 200) {
+        if (version == null || version.isBlank() || version.length() > 200) {
             throw new ScanConfigurationException();
         }
-        Path root;
-        try { root = Path.of(configuredRoot).toAbsolutePath().normalize(); }
-        catch (InvalidPathException invalid) { throw new ScanConfigurationException(); }
+        RepositorySelection selected = repositories.resolve(repository);
+        var root = selected.root();
         var id = store.create(root.toString(), version);
         store.start(id);
         try {
