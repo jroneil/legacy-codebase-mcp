@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { asChain, describeTruncation, evidenceLocation, formatCount, formatTimestamp, intParam, nodeLabel, traceSteps } from "@/lib/view";
+import { asChain, describeTruncation, evidenceLabel, evidenceLocation, formatCount, formatTimestamp, intParam, nodeLabel, traceSteps } from "@/lib/view";
 import { edge, path } from "../test/fixtures";
 
 describe("trace presentation", () => {
@@ -52,6 +52,14 @@ describe("labels and formatting", () => {
     expect(nodeLabel("groovy:type:demo.CustomerController")).toBe("demo.CustomerController");
     expect(nodeLabel("groovy:method:demo.CustomerController#show(Long)")).toBe("demo.CustomerController#show(Long)");
     expect(nodeLabel("grails:route:grails-app/controllers/demo/UrlMappings.groovy#/customer/$id")).toBe("/customer/$id");
+  });
+
+  it("labels Spring Boot evidence without changing unknown backend labels", () => {
+    expect(evidenceLabel("SPRING_COMPONENT")).toBe("Spring Component");
+    expect(evidenceLabel("SPRING_BEAN")).toBe("Spring Bean");
+    expect(evidenceLabel("SPRING_DATA_DERIVED_METHOD")).toBe("Spring Data");
+    expect(evidenceLabel("JPA_ANNOTATION")).toBe("JPA");
+    expect(evidenceLabel("JAVA_AST")).toBe("JAVA_AST");
   });
 
   it("renders evidence file, line and column as provided", () => {

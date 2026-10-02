@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { encodeId, type TableImpact } from "@/lib/api";
-import { asChain, describeTruncation, evidenceLocation, nodeLabel } from "@/lib/view";
+import { asChain, describeTruncation, evidenceLabel, evidenceLocation, nodeLabel } from "@/lib/view";
 import { EmptyNotice, Mono, StateBadge, TruncatedNotice } from "./ui";
 
 const ACCESS_TONE: Record<string, string> = {
@@ -50,6 +50,7 @@ export function TableImpactList({
                       {chain.evidence[nodeIndex] ? (
                         <span className="ml-2 text-zinc-500">
                           ↓ <Mono>{chain.evidence[nodeIndex].type}</Mono> · {chain.evidence[nodeIndex].resolutionState} ·{" "}
+                          {evidenceLabel(chain.evidence[nodeIndex].evidenceType)} ·{" "}
                           <Mono>{evidenceLocation(chain.evidence[nodeIndex])}</Mono>
                         </span>
                       ) : null}

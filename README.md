@@ -1,8 +1,8 @@
 # Legacy Codebase MCP Server
 
-Deterministic, evidence-backed code intelligence for legacy Struts and Grails
-applications, exposed to coding agents over MCP and to people over REST and a small
-web explorer with an explicit scan control.
+Deterministic, evidence-backed application architecture exploration for legacy Struts,
+Spring MVC, Spring Boot, and Grails applications. Engineers use the web explorer;
+coding agents use MCP; both read the same indexed evidence model.
 
 ## Why this project exists
 
@@ -19,11 +19,14 @@ This server does that discovery once, deterministically, and stores the result:
 - **The analysis is repeatable and cited.** Every relationship carries `RESOLVED`,
   `INFERRED` or `UNRESOLVED` state plus source file/line evidence, and identical input
   produces identical output. Uncertainty is preserved rather than guessed away.
-- **The agent consumes structured evidence instead of rediscovering it.** MCP tools
+- **Agents consume structured evidence instead of rediscovering it.** MCP tools
   (`search_symbols`, `get_symbol`, `find_usages`, `trace_component`,
   `list_database_tables`, `find_table_usages`, `inspect_location`, `list_entry_points`)
   return bounded, evidence-backed answers, so the model's reasoning goes into
-  interpretation. REST exposes the same services, and the explorer shows the same
+  interpretation.
+- **The UI is independently useful to engineers.** Symbol details, usages, entry points,
+  traces, table impact, evidence confidence, scan freshness, and localized errors are
+  available without an AI agent. REST, MCP, and the explorer read the same completed
   snapshot.
 - **No LLM API is required inside the application.** Core analysis is local and static:
   no model calls, no embeddings, no source code sent anywhere. You bring the agent; this
@@ -33,6 +36,12 @@ Scope and acceptance criteria: [PRD](docs/PRD.md) and
 [implementation plan](docs/IMPLEMENTATION_PLAN.md). What is proven, and what is not, is
 recorded in the [validation records](docs/validation/) — including
 [real-repository validation](docs/validation/REAL_REPOSITORY_VALIDATION.md).
+
+Supported deterministic baselines are Struts 1.x, Spring MVC annotation routes and a
+bounded legacy XML mapping, Spring Boot/annotation wiring, Spring XML wiring, Grails 2.6
+plus representative 3.x–6.x layouts, JDBC, Hibernate XML/basic HQL, bounded Spring
+Data/JPA evidence, and GORM conventions. These are documented subsets rather than
+generic support for every Spring, Grails, or persistence feature.
 
 ## Quick start
 
@@ -85,7 +94,7 @@ to the host.
 | `POSTGRES_PASSWORD` | Any local password. It initializes a new PostgreSQL volume; changing it later does not change an existing volume. |
 
 Optional values and defaults are `POSTGRES_DB=legacy`, `POSTGRES_USER=legacy`,
-`ANALYZER_VERSION=grails-index-5`, `BACKEND_PORT=8080`, `FRONTEND_PORT=3000`, and
+`ANALYZER_VERSION=legacy-analyzer-1`, `BACKEND_PORT=8080`, `FRONTEND_PORT=3000`, and
 `POSTGRES_PORT=54329` for the native development override. The launcher supplies the
 selected repository path and safe display name at runtime; do not add a repository path
 to `.env`. `.env` is gitignored and must not be committed.
@@ -638,10 +647,10 @@ and treat that boundary as documented in `AGENTS.md`.
 
 ## Frontend (Slice 7)
 
-The Next.js App Router UI is an inspection interface over the REST API with one
-operational scan control. It contains no analysis logic: every relationship, resolution
-state, access kind,
-directness and truncation flag is displayed exactly as the backend returns it.
+The Next.js App Router UI is an engineer-facing architecture explorer over the REST
+API with one operational scan control. It is useful without an AI agent and contains no
+analysis logic: every relationship, resolution state, source label, access kind,
+directness and truncation flag is displayed from the shared backend evidence model.
 
 In the Compose stack it runs at http://127.0.0.1:3000 and reaches the backend over the
 Compose network (`LEGACY_API_BASE_URL=http://backend:8080`). To run it on the host
@@ -670,6 +679,110 @@ Google font loading needs network access during a fresh build. Routes:
 
 Pages render on demand (`force-dynamic`, uncached `fetch`), so a build does not need a
 running backend. `npm run lint` is also available.
+
+## Spring MVC mapping (Slice 11)
+
+Spring MVC entry points reuse the same `ROUTE`, Java method, relationship, evidence,
+traversal, REST, and MCP model as Struts and Grails. Source-only JavaParser analysis
+supports a representative Spring MVC 3.x–6.x annotation baseline:
+
+- `@Controller` and `@RestController`;
+- class-level and method-level `@RequestMapping`;
+- `@GetMapping`, `@PostMapping`, `@PutMapping`, `@DeleteMapping`, and `@PatchMapping`;
+- `value`/`path`, single strings, arrays, and bounded `static final String` constants;
+- explicit `RequestMethod` metadata; a plain `@RequestMapping` keeps its HTTP method
+  unspecified;
+- obvious logical view returns such as `return "customer/detail"`; `@ResponseBody` and
+  `@RestController` methods do not create view evidence.
+
+Resolved routes have deterministic IDs containing source path, HTTP method, composed
+path, existing Java method ID, and annotation location. They connect to that method with
+`ROUTES_TO`; `RENDERS` connects a controller method to a statically obvious logical
+view. Dynamic annotation expressions remain visible as `UNRESOLVED` routes with safe
+localized diagnostics and no invented target. Duplicate mappings remain separate route
+candidates, so selecting a bare path can be ambiguous.
+
+A bounded legacy XML case is supported: when a Spring context explicitly declares
+`BeanNameUrlHandlerMapping`, a slash-prefixed bean name maps to its unique
+`handleRequest` method as `INFERRED` convention evidence. `SimpleUrlHandlerMapping`
+property maps and the full historical handler-adapter matrix are not modeled.
+Spring annotation components and injection are covered by the bounded Slice 12 rules
+below; existing explicit Spring XML beans and injection remain available independently.
+
+The normal graph provides route-to-database evidence without framework-specific
+traversal logic:
+
+```text
+GET /customers/{id}
+  -> CustomerController.getCustomer(String)
+  -> CustomerServiceImpl.find(String)
+  -> CustomerDAO.find(String)
+  -> SELECT query
+  -> READS_TABLE CUSTOMER
+```
+
+The equivalent POST route reaches `WRITES_TABLE CUSTOMER`. Query it with
+`/api/entry-points`, `/api/relationships/trace`, and
+`/api/relationships/database-tables`, or the existing MCP tools. Path confidence still
+uses the weakest relationship edge.
+
+
+## Spring Boot and annotation wiring (Slice 12)
+
+Spring Boot 2.x–3.x source patterns extend the same Java, bean, relationship, route,
+database, REST, MCP, and UI model. The analyzer does not start Spring or load target
+classes.
+
+The supported component baseline is `@SpringBootApplication`, `@Configuration`,
+`@Component`, `@Service`, `@Repository`, `@Controller`, and `@RestController`.
+Component beans reuse existing Java type symbols. Explicit annotation names are
+`RESOLVED`; default decapitalized names are documented Spring conventions and remain
+`INFERRED`. Dynamic names remain `UNRESOLVED`.
+
+The application package is an inferred component-scan root. Literal, array, or bounded
+`static final String` `@ComponentScan`/`scanBasePackages` values add explicit roots.
+Annotated components outside known roots remain visible as unresolved evidence and are
+not injection candidates. Runtime profiles, conditions, custom composed annotations,
+classpath scanning, and the complete BeanFactory algorithm are not simulated.
+
+Constructor injection, `@Autowired`, `@Inject`, and `@Resource` fields/setters use
+`INJECTS`. A unique compatible type or explicit resource name resolves; multiple
+candidates remain ambiguous and missing candidates remain unresolved. `@Configuration`
+methods annotated with `@Bean`, including explicit names/aliases, create `BEAN` symbols
+that retain factory method, return type, source location, and `WIRES_TO` evidence.
+Method bodies are never executed.
+
+A bounded Spring Data/JPA subset recognizes interfaces extending `Repository`,
+`CrudRepository`, `PagingAndSortingRepository`, or `JpaRepository`. Explicit generic
+entity types use `WIRES_TO`. `@Entity` with explicit `@Table(name=...)` uses a resolved
+`MAPS_TO_TABLE`; conventional JPA table naming is not guessed. Declared repository
+methods beginning with `find`, `read`, or `get` receive inferred `READS_TABLE` evidence;
+`save`, `delete`, or `remove` receive inferred `WRITES_TABLE` evidence only when that
+entity table is explicit.
+
+Example evidence paths from the fixture are:
+
+```text
+GET /customers/{id}
+  -> CustomerController.get(Long)
+  -> CustomerService.find(Long)
+  -> CustomerRepository.findById(Long)
+  -> Customer
+  -> MAPS_TO_TABLE CUSTOMER
+```
+
+```text
+POST /customers
+  -> CustomerController.create(Customer)
+  -> CustomerService.save(Customer)
+  -> CustomerRepository.save(Customer)
+  -> WRITES_TABLE CUSTOMER · INFERRED
+```
+
+The UI visibly labels Spring MVC, Spring Component, Spring Bean, Spring Data, and JPA
+evidence on symbol relationships, traces, and table-impact paths. MCP and REST expose
+the identical stored relationships and weakest-edge confidence without new
+framework-specific tools or endpoints.
 
 ## Grails mapping (Slices 8, 8.1)
 
@@ -748,19 +861,19 @@ curl --get 'http://127.0.0.1:8080/api/entry-points' \
 ```
 
 The entry-point trace endpoint keeps its Struts/Spring bean-bridge semantics; for a
-Grails route it stops at the controller action, and the deeper service/domain/table
-chain is returned by `/api/relationships/trace`.
+Grails or Spring MVC route it stops at the controller action/method, and the deeper
+service/domain/table chain is returned by `/api/relationships/trace`.
 
 ## Validation and version control
 
-See [Slice 10.3 validation](docs/validation/SLICE_10_3_VALIDATION.md) for the current
-single-repository launcher and read-only bind-mount workflow. Earlier records remain as
-historical evidence: [Slice 10.1](docs/validation/SLICE_10_1_VALIDATION.md),
-[Slice 10](docs/validation/SLICE_10_VALIDATION.md), and
-[Slice 9](docs/validation/SLICE_09_VALIDATION.md). Analyzer validation is recorded in
-the [real-repository validation](docs/validation/REAL_REPOSITORY_VALIDATION.md) and the
-other [slice records](docs/validation/).
+See [Slice 12 validation](docs/validation/SLICE_12_VALIDATION.md) for the current
+Spring Boot annotation-wiring evidence. Spring MVC validation is recorded in
+[Slice 11](docs/validation/SLICE_11_VALIDATION.md), and the launcher and read-only
+bind-mount workflow in [Slice 10.3](docs/validation/SLICE_10_3_VALIDATION.md). Earlier
+records remain as historical evidence in the [validation directory](docs/validation/).
+Analyzer validation is also recorded in the
+[real-repository validation](docs/validation/REAL_REPOSITORY_VALIDATION.md).
 
-Validation records identify the commit under test when available. Slice 10.3 is
+Validation records identify the commit under test when available. Slice 12 is
 uncommitted and ready for review. Root ignore rules exclude generated output, local
 credentials, and `.env`.

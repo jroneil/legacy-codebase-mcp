@@ -18,7 +18,7 @@ export function freshness(overrides: Partial<Freshness> = {}): Freshness {
   return {
     scanId: "11111111-1111-1111-1111-111111111111",
     gitCommitSha: "b".repeat(40),
-    analyzerVersion: "database-usage-index-4",
+    analyzerVersion: "legacy-analyzer-1",
     scanCompletedAt: "2026-10-01T12:00:00Z",
     ...overrides,
   };
@@ -152,7 +152,7 @@ export function scan(overrides: Partial<Scan> = {}): Scan {
     id: "11111111-1111-1111-1111-111111111111",
     status: "COMPLETED",
     repositoryRoot: "/fixtures/legacy",
-    analyzerVersion: "database-usage-index-4",
+    analyzerVersion: "legacy-analyzer-1",
     gitCommitSha: "b".repeat(40),
     createdAt: "2026-10-01T11:59:00Z",
     startedAt: "2026-10-01T11:59:01Z",

@@ -9,7 +9,7 @@ public class ScanProperties {
     private String repositoryRoot = "";
     private String repositoryName = "";
     private boolean repositoryConfigured;
-    private String analyzerVersion = "database-usage-index-4";
+    private String analyzerVersion = "legacy-analyzer-1";
 
     public String getRepositoryRoot() { return repositoryRoot; }
     public void setRepositoryRoot(String repositoryRoot) { this.repositoryRoot = repositoryRoot; }

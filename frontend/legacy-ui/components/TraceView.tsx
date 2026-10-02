@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { encodeId, type Relationship } from "@/lib/api";
-import { describeTruncation, evidenceLocation, nodeLabel, traceSteps, type Chain } from "@/lib/view";
+import { describeTruncation, evidenceLabel, evidenceLocation, nodeLabel, traceSteps, type Chain } from "@/lib/view";
 import { EmptyNotice, Mono, StateBadge, TruncatedNotice } from "./ui";
 
 function NodeStep({ id }: { id: string }) {
@@ -20,7 +20,7 @@ function EdgeStep({ edge }: { edge: Relationship }) {
       <span className="mr-2">↓</span>
       <Mono>{edge.type}</Mono> · <StateBadge state={edge.resolutionState} />
       <span className="ml-2 text-zinc-500">
-        <Mono>{evidenceLocation(edge)}</Mono>
+        {evidenceLabel(edge.evidenceType)} · <Mono>{evidenceLocation(edge)}</Mono>
       </span>
       {unresolved ? (
         <span className="ml-2 text-zinc-600 dark:text-zinc-300">→ {edge.targetDescription ?? "unresolved target"}</span>

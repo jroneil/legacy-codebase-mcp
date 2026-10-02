@@ -17,7 +17,9 @@ public class FrameworkIndexer {
             "org.apache.struts.extras.actions.DispatchAction");
 
     public Index index(Path root, Inventory inventory, Index javaIndex) {
-        return new Session(root, inventory, javaIndex).run();
+        var mvc = new SpringMvcIndexer().index(root, inventory, javaIndex);
+        var xml = new Session(root, inventory, mvc).run();
+        return new SpringAnnotationIndexer().index(root, inventory, xml);
     }
 
     private static final class Session {
@@ -34,7 +36,7 @@ public class FrameworkIndexer {
         final List<Route> routes = new ArrayList<>();
         final List<WebServlet> servlets = new ArrayList<>();
         final Map<String, List<Bean>> beanNames = new TreeMap<>();
-        record Bean(String id, String context, String path, String className, SafeXml.Element xml) {}
+        record Bean(String id, String name, String context, String path, String className, SafeXml.Element xml) {}
         record Route(String id, String path, String actionPath, SafeXml.Element xml) {}
         record WebServlet(String id, String path, SafeXml.Element xml, Set<String> configs) {}
 
@@ -65,6 +67,7 @@ public class FrameworkIndexer {
             for (String context : springRoots) if (!symbols.containsKey("xml:context:" + context))
                 spring(context, context, new HashSet<>(), new HashSet<>());
             for (Bean bean : beans) wire(bean);
+            legacyMvc();
             for (String path : strutsFiles) struts(path);
             for (Route route : routes) forwards(route);
             for (WebServlet servlet : servlets) for (Route route : routes) {
@@ -203,7 +206,7 @@ public class FrameworkIndexer {
                 String id = "spring:bean:" + context + "#" + name;
                 if (symbols.containsKey(id)) id += "@" + path + ":" + node.line + ":" + node.column;
                 String cls = node.attr("class");
-                Bean bean = new Bean(id, context, path, cls, node);
+                Bean bean = new Bean(id, name, context, path, cls, node);
                 beans.add(bean);
                 aliases.add(name);
                 for (String alias : new LinkedHashSet<>(aliases)) beanNames.computeIfAbsent(context + "#" + alias, k -> new ArrayList<>()).add(bean);
@@ -212,6 +215,27 @@ public class FrameworkIndexer {
                 String target = validClass(cls) && ordinaryBean(node) ? type(cls) : null;
                 edge(id, target, validClass(cls) ? cls : "Bean class unavailable", "WIRES_TO", "RESOLVED", path, node);
                 if (target == null) error(path, "SPRING_BEAN_CLASS_UNRESOLVED");
+            }
+        }
+        void legacyMvc() {
+            String mappingType = "org.springframework.web.servlet.handler.BeanNameUrlHandlerMapping";
+            var contexts = beans.stream().filter(b -> b.className.equals(mappingType) && ordinaryBean(b.xml))
+                    .map(Bean::context).collect(java.util.stream.Collectors.toCollection(TreeSet::new));
+            for (Bean bean : beans) {
+                if (!contexts.contains(bean.context) || !bean.name.startsWith("/") || !ordinaryBean(bean.xml)) continue;
+                var methods = symbols.values().stream().filter(s -> s.kind().equals("METHOD")
+                        && s.stableId().startsWith("java:method:" + bean.className + "#")
+                        && s.simpleName().equals("handleRequest")).toList();
+                String id = "spring-mvc:route:" + bean.path + "#UNSPECIFIED:" + bean.name
+                        + "#" + bean.id + "@" + bean.xml.line + ":" + bean.xml.column;
+                symbol(id, "ROUTE", bean.name, bean.name,
+                        "httpMethod=UNSPECIFIED; mapping=BeanNameUrlHandlerMapping", bean.path, bean.xml);
+                edge("xml:context:" + bean.path, id, null, "CONTAINS", "RESOLVED", bean.path, bean.xml);
+                String target = methods.size() == 1 ? methods.getFirst().stableId() : null;
+                edge(id, target, candidateDescription("BeanNameUrlHandlerMapping handleRequest convention",
+                        methods.stream().map(Symbol::stableId).toList()), "ROUTES_TO",
+                        methods.size() == 1 ? "INFERRED" : "UNRESOLVED", bean.path, bean.xml);
+                if (target == null) error(bean.path, "SPRING_MVC_XML_HANDLER_UNRESOLVED");
             }
         }
         boolean ordinaryBean(SafeXml.Element node) {

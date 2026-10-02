@@ -48,7 +48,7 @@ class GrailsIntegrationTests extends PostgresTestSupport {
         jdbc.update("INSERT INTO active_scan(singleton) VALUES (true)");
         GrailsIndexerTests.copyFixture(root);
         configureRepository(root);
-        properties.setAnalyzerVersion("grails-index-5-test");
+        properties.setAnalyzerVersion("legacy-analyzer-1-test");
     }
 
     Answer tables(String component) { return queries.query(component, Mode.DATABASE_TABLES, Direction.OUTGOING, bounds); }
@@ -56,7 +56,7 @@ class GrailsIntegrationTests extends PostgresTestSupport {
     @Test void grailsFlowIsTraceableThroughServicesAndRestAndMcp() throws Exception {
         var scan = scans.scan();
         assertThat(scan.scan().status()).isEqualTo(ScanModel.Status.COMPLETED);
-        assertThat(scan.scan().analyzerVersion()).isEqualTo("grails-index-5-test");
+        assertThat(scan.scan().analyzerVersion()).isEqualTo("legacy-analyzer-1-test");
 
         // /customer/show -> CustomerController.show -> CustomerService.findByLastName -> Customer -> CUSTOMER
         var answer = queries.query(ROUTE_URI, Mode.TRACE, Direction.OUTGOING, bounds);

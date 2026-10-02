@@ -51,7 +51,7 @@ export default async function EntryPointsPage({
                   <tr>
                     <th className="py-1 pr-3">Route</th>
                     <th className="py-1 pr-3">Declared at</th>
-                    <th className="py-1 pr-3">Dispatch parameter</th>
+                    <th className="py-1 pr-3">Route metadata</th>
                     <th className="py-1">Trace</th>
                   </tr>
                 </thead>

@@ -65,6 +65,20 @@ export function nodeLabel(stableId: string): string {
   return label;
 }
 
+const EVIDENCE_LABELS: Record<string, string> = {
+  SPRING_MVC_ANNOTATION: "Spring MVC",
+  SPRING_COMPONENT: "Spring Component",
+  SPRING_INJECTION: "Spring Component",
+  SPRING_BEAN: "Spring Bean",
+  SPRING_DATA: "Spring Data",
+  SPRING_DATA_DERIVED_METHOD: "Spring Data",
+  JPA_ANNOTATION: "JPA",
+};
+
+export function evidenceLabel(evidenceType: string): string {
+  return EVIDENCE_LABELS[evidenceType] ?? evidenceType;
+}
+
 export function evidenceLocation(edge: Relationship): string {
   return `${edge.sourcePath}:${edge.line}:${edge.column}`;
 }

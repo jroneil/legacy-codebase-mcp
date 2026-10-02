@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { encodeId, type Relationship } from "@/lib/api";
-import { evidenceLocation, nodeLabel, shortLocation } from "@/lib/view";
+import { evidenceLabel, evidenceLocation, nodeLabel, shortLocation } from "@/lib/view";
 import { EmptyNotice, Mono, StateBadge } from "./ui";
 
 function NodeLink({ id }: { id: string }) {
@@ -39,8 +39,9 @@ export function RelationshipList({
               </span>
             )}
           </div>
-          <div className="text-xs text-zinc-500" title={`evidenceType=${edge.evidenceType}`}>
-            evidence <Mono>{shortLocation(edge)}</Mono> · {evidenceLocation(edge)}
+          <div className="text-xs text-zinc-500">
+            <span className="font-medium">{evidenceLabel(edge.evidenceType)}</span> · evidence <Mono>{shortLocation(edge)}</Mono> ·{" "}
+            {evidenceLocation(edge)}
           </div>
         </li>
       ))}

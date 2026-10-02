@@ -191,7 +191,7 @@ public class McpTools {
     }
 
     @McpTool(name = "list_entry_points",
-            description = "List deterministic framework entry points (Struts routes) of the active completed scan, "
+            description = "List deterministic framework entry points (Struts, Spring MVC and Grails routes) of the active completed scan, "
                     + "optionally filtered by an exact route path. Bounded and read-only.",
             annotations = @McpAnnotations(readOnlyHint = true, destructiveHint = false, idempotentHint = true, openWorldHint = false))
     public ListEntryPointsResponse listEntryPoints(

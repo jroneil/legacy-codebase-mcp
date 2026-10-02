@@ -32,7 +32,7 @@ services:
       LEGACY_REPOSITORY_ROOT: /workspace/target
       LEGACY_REPOSITORY_NAME: ${LEGACY_REPOSITORY_NAME:-Repository not selected}
       LEGACY_REPOSITORY_CONFIGURED: ${LEGACY_REPOSITORY_CONFIGURED:-false}
-      ANALYZER_VERSION: ${ANALYZER_VERSION:-grails-index-5}
+      ANALYZER_VERSION: ${ANALYZER_VERSION:-legacy-analyzer-1}
     volumes:
       - type: bind
         source: ${LEGACY_REPOSITORY_ROOT:-./.local-repository-unselected}

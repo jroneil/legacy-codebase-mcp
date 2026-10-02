@@ -42,7 +42,10 @@ public class FrameworkQueries {
         var routeEdges = walk.edges(entryId, "ROUTES_TO");
         if (routeEdges.isEmpty()) walk.add(List.of(entry.getFirst()), List.of(), "NO_ACTION_CLASS");
         for (var route : routeEdges) {
-            if (route.targetId() != null && route.targetId().startsWith("java:method:")) continue;
+            if (route.targetId() != null && route.targetId().startsWith("java:method:")) {
+                walk.add(List.of(entry.getFirst(), route.targetId()), List.of(route), "CONTROLLER_METHOD");
+                continue;
+            }
             var evidence = List.of(route);
             var components = append(List.of(entry.getFirst()), route.targetId() == null ? route.targetDescription() : route.targetId());
             if (route.targetId() == null) { walk.add(components, evidence, "UNRESOLVED"); continue; }

@@ -61,6 +61,24 @@ describe("relationships", () => {
     expect(html).toContain("demo.CustomerService");
   });
 
+  it("shows Spring framework evidence labels on relationships", () => {
+    const html = render(
+      <RelationshipList
+        relationships={[
+          edge({ evidenceType: "SPRING_COMPONENT" }),
+          edge({ evidenceType: "SPRING_BEAN" }),
+          edge({ evidenceType: "SPRING_DATA" }),
+          edge({ evidenceType: "JPA_ANNOTATION" }),
+        ]}
+        emptyMessage="none"
+      />,
+    );
+    expect(html).toContain("Spring Component");
+    expect(html).toContain("Spring Bean");
+    expect(html).toContain("Spring Data");
+    expect(html).toContain("JPA");
+  });
+
   it("keeps unresolved targets as descriptions rather than links", () => {
     const html = render(
       <RelationshipList
@@ -85,7 +103,7 @@ describe("trace rendering", () => {
     const chain = asChain(
       path({
         nodes: ["/customer/search", "java:type:demo.CustomerAction"],
-        evidence: [edge({ type: "ROUTES_TO", resolutionState: "INFERRED", sourcePath: "web/WEB-INF/struts-config.xml", line: 42, column: 3 })],
+        evidence: [edge({ type: "ROUTES_TO", resolutionState: "INFERRED", sourcePath: "web/WEB-INF/struts-config.xml", line: 42, column: 3, evidenceType: "SPRING_MVC_ANNOTATION" })],
         resolutionState: "INFERRED",
         termination: "STEP",
       }),
@@ -96,6 +114,7 @@ describe("trace rendering", () => {
     expect(html).toContain("web/WEB-INF/struts-config.xml:42:3");
     expect(html).toContain("INFERRED");
     expect(html).toContain("STEP");
+    expect(html).toContain("Spring MVC");
   });
 
   it("states explicitly when the traversal was truncated", () => {
@@ -123,7 +142,7 @@ describe("table impact", () => {
             direct: false,
             path: {
               nodes: ["java:type:demo.CustomerAction", "java:type:demo.CustomerDAO", "db:table:ORDERS"],
-              evidence: [edge(), edge({ type: "WRITES_TABLE", resolutionState: "INFERRED", sourcePath: "src/demo/CustomerDAO.java", line: 42 })],
+              evidence: [edge(), edge({ type: "WRITES_TABLE", resolutionState: "INFERRED", sourcePath: "src/demo/CustomerDAO.java", line: 42, evidenceType: "SPRING_DATA_DERIVED_METHOD" })],
               resolutionState: "INFERRED",
               termination: "STEP",
             },
@@ -141,6 +160,7 @@ describe("table impact", () => {
     expect(html).toContain("transitive");
     expect(html).toContain("supporting evidence path");
     expect(html).toContain("CustomerDAO.java:42");
+    expect(html).toContain("Spring Data");
   });
 
   it("shows truncation and the empty state", () => {
@@ -154,7 +174,7 @@ describe("scan freshness and paging", () => {
     const html = render(<FreshnessPanel freshness={freshness()} />);
     expect(html).toContain("11111111-1111-1111-1111-111111111111");
     expect(html).toContain("b".repeat(40));
-    expect(html).toContain("database-usage-index-4");
+    expect(html).toContain("legacy-analyzer-1");
     expect(html).toContain("2026-10-01T12:00:00Z");
   });
 

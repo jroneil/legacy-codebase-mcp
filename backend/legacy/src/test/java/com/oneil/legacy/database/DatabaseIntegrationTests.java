@@ -39,7 +39,7 @@ class DatabaseIntegrationTests extends PostgresTestSupport {
         jdbc.execute("TRUNCATE java_relationship, java_symbol, source_file, analysis_error, active_scan, scan");
         jdbc.update("INSERT INTO active_scan(singleton) VALUES (true)");
         DatabaseIndexerTests.copyFixture(root);
-        configureRepository(root); properties.setAnalyzerVersion("database-usage-index-4-test");
+        configureRepository(root); properties.setAnalyzerVersion("legacy-analyzer-1-database-test");
     }
     @Test void restReturnsDirectTableUsageQueryMetadataAndLocalizedErrors() throws Exception {
         var scan = scans.scan();

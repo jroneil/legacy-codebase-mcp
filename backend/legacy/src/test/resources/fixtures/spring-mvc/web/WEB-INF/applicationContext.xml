@@ -1,0 +1,11 @@
+<beans>
+  <bean id="handlerMapping" class="org.springframework.web.servlet.handler.BeanNameUrlHandlerMapping"/>
+  <bean id="/legacy-customers" class="demo.LegacyController"/>
+  <bean id="customerController" class="demo.CustomerController">
+    <property name="customerService" ref="customerService"/>
+  </bean>
+  <bean id="customerService" class="demo.CustomerServiceImpl">
+    <property name="customerDAO" ref="customerDAO"/>
+  </bean>
+  <bean id="customerDAO" class="demo.CustomerDAO"/>
+</beans>
